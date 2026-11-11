@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier Meubles · chez moi</title>
+<script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}</script>
+<style>
+:root{--bg:#f3eee6;--ink:#1f1a14;--mute:#7a6e60;--acc:#d9480f;--card:#fffdf9;--line:#e2d6c2}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:15px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+#app{display:flex;flex-direction:column;height:100%}
+header{padding:12px 14px;background:var(--card);border-bottom:1px solid var(--line)}
+header b{font-size:17px;display:block}header span{color:var(--mute);font-size:13px}
+model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-gradient(#f7f3ec,#e9e0d1);--poster-color:transparent}
+.bar{padding:10px 14px 16px;background:var(--card);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
+.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:flex-start}
+.seg button{border:none;background:#fff;padding:9px 16px;font:inherit}.seg button.on{background:var(--ink);color:#fff}
+#arBtn{border:none;background:var(--acc);color:#fff;font:700 18px inherit;padding:16px;border-radius:14px;width:100%}
+#note{font-size:13px;color:var(--mute)}
+#sz{position:absolute;top:12px;left:64px;right:12px;display:none;flex-direction:column;gap:6px;background:rgba(255,253,249,.94);border:1px solid var(--line);border-radius:14px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.15);z-index:5}
+#sz.on{display:flex}
+#sz .r{display:flex;align-items:center;gap:8px}
+#sz button{border:1px solid var(--line);background:#fff;border-radius:10px;font-size:24px;font-weight:700;width:46px;height:42px;flex:none;color:var(--ink);padding:0}
+#sz input{width:100%;margin:0;accent-color:var(--acc)}
+#szV{flex:1;text-align:center;font-weight:700;font-size:17px;line-height:1.15;border:none;background:none}
+#szV small{display:block;font-weight:400;font-size:11px;color:var(--mute)}
+#msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;color:var(--mute);max-width:80%}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><b id="name">Atelier Meubles</b><span id="dims">Ouvre cette page depuis le bouton « Voir chez moi » de l'app.</span></header>
+  <div style="position:relative;flex:1;display:flex;min-height:0">
+    <model-viewer id="mv" camera-controls touch-action="pan-y" shadow-intensity="1" exposure="1" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" ar-placement="floor" camera-orbit="-30deg 72deg auto">
+      <button slot="ar-button" id="arBtn">📱 Voir chez moi en vraie grandeur</button>
+      <div id="sz"><div class="r"><button id="szM" aria-label="Plus petit">−</button><div id="szV">100 %<small></small></div><button id="szP" aria-label="Plus grand">+</button></div><input id="szS" type="range" min="70" max="130" step="1" value="100"></div>
+    </model-viewer>
+    <div id="msg"></div>
+  </div>
+  <div class="bar">
+    <div class="seg"><button data-pl="floor" class="on">Posé au sol</button><button data-pl="wall">Fixé au mur</button></div>
+    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Si la taille ne te semble pas juste dans ta pièce, corrige-la avec − / + en haut (même pendant la caméra) ; touche le pourcentage pour revenir à la vraie grandeur.</div>
+  </div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
+const rng = (seed, i) => { const x = Math.sin(seed * 9301.7 + i * 49297.3) * 233280; return x - Math.floor(x); };
+const OBJS = {
+  lampe: { n: 'Lampe', f: 1, r: .62, h: 450 }, champi: { n: 'Lampe champignon', f: 1, r: .85, h: 320 }, globe: { n: 'Globe', r: .72, h: 380 },
+  plante: { n: 'Plante', f: 1, r: .72, h: 420 }, vase: { n: 'Vase', r: .5, h: 320 }, cadre: { n: 'Cadre', r: .78, h: 260 },
+  reveil: { n: 'Réveil', r: .95, h: 160 }, photo: { n: 'Appareil photo', r: 1.45, h: 110 }, vin: { n: 'Bouteille', f: 1, r: .27, h: 300 },
+};
+
+function paintObj(c, t, X, Y, W, H) { // X,Y = coin haut-gauche (px), W×H = taille (px)
+  const L = (x, y) => [X + x * W, Y + y * H], lg = (y0, y1, a, b) => { const g = c.createLinearGradient(0, Y + y0 * H, 0, Y + y1 * H); g.addColorStop(0, a); g.addColorStop(1, b); return g; };
+  const hg = (x0, x1, a, b) => { const g = c.createLinearGradient(X + x0 * W, 0, X + x1 * W, 0); g.addColorStop(0, a); g.addColorStop(.55, b); g.addColorStop(1, a); return g; };
+  const poly = (pts, fill, stroke) => { c.beginPath(); pts.forEach((p, i) => { const [x, y] = L(...p); i ? c.lineTo(x, y) : c.moveTo(x, y); }); c.closePath(); c.fillStyle = fill; c.fill(); if (stroke) { c.strokeStyle = stroke; c.lineWidth = Math.max(.6, W * .012); c.stroke(); } };
+  const ell = (cx_, cy_, rx, ry, fill) => { c.beginPath(); c.ellipse(X + cx_ * W, Y + cy_ * H, Math.max(.1, rx * W), Math.max(.1, ry * H), 0, 0, Math.PI * 2); c.fillStyle = fill; c.fill(); };
+  c.save();
+  if (t === 'lampe') {
+    const gl = c.createRadialGradient(X + W / 2, Y + .48 * H, 1, X + W / 2, Y + .48 * H, W * .9); gl.addColorStop(0, 'rgba(255,214,120,.45)'); gl.addColorStop(1, 'rgba(255,214,120,0)'); c.fillStyle = gl; c.fillRect(X - W * .4, Y, W * 1.8, H);
+    poly([[.48, .45], [.52, .45], [.53, .9], [.47, .9]], hg(.47, .53, '#8a6a3a', '#d8b36a'));
+    poly([[.22, .9], [.78, .9], [.72, 1], [.28, 1]], lg(.9, 1, '#4a4844', '#2a2927'));
+    poly([[.22, 0], [.78, 0], [1, .46], [0, .46]], lg(0, .46, '#fbf1dc', '#efd8a8'), 'rgba(120,90,40,.35)');
+    c.globalAlpha = .25; poly([[.3, .06], [.4, .06], [.3, .42], [.14, .42]], '#fff'); c.globalAlpha = 1;
+  } else if (t === 'champi') {
+    const gl = c.createRadialGradient(X + W / 2, Y + .46 * H, 1, X + W / 2, Y + .46 * H, W * .7); gl.addColorStop(0, 'rgba(255,190,120,.5)'); gl.addColorStop(1, 'rgba(255,190,120,0)'); c.fillStyle = gl; c.fillRect(X - W * .2, Y + .3 * H, W * 1.4, H * .5);
+    poly([[.43, .44], [.57, .44], [.6, .93], [.4, .93]], hg(.4, .6, '#d65f2c', '#f08a52'));
+    ell(.5, .95, .3, .05, '#c4511f');
+    c.beginPath(); c.ellipse(X + W / 2, Y + .46 * H, W / 2, .46 * H, 0, Math.PI, 0); c.closePath(); c.fillStyle = lg(0, .46, '#f39a5e', '#d6602e'); c.fill();
+    ell(.5, .46, .5, .03, '#b8481c'); c.globalAlpha = .3; ell(.32, .17, .1, .06, '#fff'); c.globalAlpha = 1;
+  } else if (t === 'globe') {
+    ell(.5, .955, .3, .045, '#4a3322'); poly([[.47, .8], [.53, .8], [.54, .94], [.46, .94]], hg(.46, .54, '#8b6a3e', '#d9b56c'));
+    const R = Math.min(.44 * W, .38 * H), cxp = X + W / 2, cyp = Y + .42 * H;
+    c.beginPath(); c.arc(cxp, cyp, R, 0, Math.PI * 2); const og = c.createRadialGradient(cxp - R * .35, cyp - R * .35, R * .1, cxp, cyp, R); og.addColorStop(0, '#7ec0e8'); og.addColorStop(1, '#1f5b8f'); c.fillStyle = og; c.fill();
+    c.save(); c.clip(); c.fillStyle = '#7fb069';
+    [[-.35, -.4, .32, .22, .5], [-.1, .05, .2, .38, -.3], [.35, -.3, .35, .2, .2], [.42, .25, .16, .22, .4], [-.55, .3, .12, .1, 0]].forEach(([dx, dy, rx, ry, a]) => { c.beginPath(); c.ellipse(cxp + dx * R, cyp + dy * R, rx * R, ry * R, a, 0, Math.PI * 2); c.fill(); });
+    c.restore();
+    c.strokeStyle = '#c9a25a'; c.lineWidth = Math.max(1, W * .035); c.beginPath(); c.arc(cxp, cyp, R * 1.1, Math.PI * .62, Math.PI * 1.85); c.stroke();
+  } else if (t === 'plante') {
+    const leaf = (bx, by, len, ang, col) => { c.save(); c.translate(X + bx * W, Y + by * H); c.rotate(ang); c.beginPath(); c.ellipse(0, -len * H / 2, Math.max(1, W * .1), len * H / 2, 0, 0, Math.PI * 2); c.fillStyle = col; c.fill(); c.strokeStyle = 'rgba(0,0,0,.15)'; c.lineWidth = 1; c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -len * H * .9); c.stroke(); c.restore(); };
+    [[.5, .62, .55, -.05, '#2f6b3a'], [.45, .62, .45, -.6, '#4f8f4a'], [.55, .62, .47, .55, '#3f7d42'], [.42, .62, .33, -1.05, '#6aa84f'], [.58, .62, .35, 1.0, '#5a9a4a'], [.5, .62, .4, .25, '#6aa84f'], [.5, .62, .38, -.3, '#3f7d42']].forEach(a => leaf(...a));
+    poly([[.18, .6], [.82, .6], [.74, 1], [.26, 1]], lg(.6, 1, '#d9804f', '#a8532c'));
+    poly([[.15, .58], [.85, .58], [.84, .66], [.16, .66]], '#c06a3e');
+  } else if (t === 'vase') {
+    c.strokeStyle = '#7a6a4a'; c.lineWidth = Math.max(.8, W * .025);
+    [[.5, .3, .42, 0], [.5, .3, .2, .02], [.5, .3, .78, .08], [.5, .3, .3, .2], [.5, .3, .66, .22]].forEach(([x0, y0, x1, y1]) => { c.beginPath(); const [a, b] = L(x0, y0), [e, f] = L(x1, y1); c.moveTo(a, b); c.quadraticCurveTo((a + e) / 2 + W * .05, (b + f) / 2, e, f); c.stroke(); });
+    c.fillStyle = '#9fb39a'; for (let i = 0; i < 14; i++) { const t_ = i / 14, x = .2 + .6 * rng(7, i), y = .03 + .25 * rng(9, i); ell(x, y, .045, .025, i % 2 ? '#9fb39a' : '#b7c7a8'); }
+    c.beginPath(); const [ax, ay] = L(.38, .3); c.moveTo(ax, ay); c.bezierCurveTo(...L(.38, .45), ...L(.1, .55), ...L(.12, .78)); c.bezierCurveTo(...L(.14, .98), ...L(.86, .98), ...L(.88, .78)); c.bezierCurveTo(...L(.9, .55), ...L(.62, .45), ...L(.62, .3)); c.closePath();
+    c.fillStyle = hg(.1, .9, '#d8cfbf', '#f4efe6'); c.fill(); c.strokeStyle = 'rgba(90,70,40,.3)'; c.lineWidth = 1; c.stroke();
+    c.strokeStyle = 'rgba(140,110,70,.35)'; c.lineWidth = Math.max(.8, W * .02); c.beginPath(); c.moveTo(...L(.16, .68)); c.lineTo(...L(.84, .68)); c.stroke();
+  } else if (t === 'cadre') {
+    poly([[0, 0], [1, 0], [1, 1], [0, 1]], lg(0, 1, '#9a6a3f', '#6e4626'));
+    poly([[.09, .07], [.91, .07], [.91, .93], [.09, .93]], '#f6f1e6');
+    poly([[.17, .14], [.83, .14], [.83, .86], [.17, .86]], lg(.14, .86, '#f7b267', '#f4845f'));
+    ell(.62, .4, .09, .07, '#fff3c4');
+    poly([[.17, .86], [.17, .66], [.38, .42], [.55, .62], [.66, .52], [.83, .72], [.83, .86]], '#5b6d8c');
+    poly([[.17, .86], [.17, .76], [.45, .7], [.83, .8], [.83, .86]], '#3d4a63');
+  } else if (t === 'reveil') {
+    ell(.24, .12, .17, .11, '#c0392b'); ell(.76, .12, .17, .11, '#c0392b');
+    poly([[.2, .9], [.27, .9], [.22, 1], [.14, 1]], '#333'); poly([[.73, .9], [.8, .9], [.86, 1], [.78, 1]], '#333');
+    ell(.5, .55, .48, .45, '#c0392b'); ell(.5, .55, .38, .36, '#fbf6ea');
+    c.fillStyle = '#333'; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, [x, y] = L(.5 + Math.cos(a) * .32, .55 + Math.sin(a) * .3); c.beginPath(); c.arc(x, y, Math.max(.6, W * .015), 0, 7); c.fill(); }
+    c.strokeStyle = '#222'; c.lineCap = 'round'; c.lineWidth = Math.max(1, W * .03); c.beginPath(); c.moveTo(...L(.5, .55)); c.lineTo(...L(.5, .34)); c.moveTo(...L(.5, .55)); c.lineTo(...L(.66, .62)); c.stroke();
+  } else if (t === 'photo') {
+    poly([[.3, .02], [.55, .02], [.6, .2], [.25, .2]], lg(0, .2, '#d9d9d9', '#a9a9a9'));
+    poly([[0, .18], [1, .18], [1, 1], [0, 1]], '#262626');
+    poly([[0, .18], [1, .18], [1, .42], [0, .42]], lg(.18, .42, '#e6e6e6', '#b4b4b4'));
+    poly([[.04, .5], [.96, .5], [.96, .94], [.04, .94]], '#1a1a1a');
+    ell(.5, .62, .27, .37, '#a9a9a9'); ell(.5, .62, .22, .3, '#2b2b2b'); ell(.5, .62, .14, .19, '#3a4a6b'); ell(.46, .56, .04, .06, 'rgba(255,255,255,.6)');
+    ell(.85, .3, .05, .07, '#c0392b');
+  } else if (t === 'vin') {
+    c.beginPath(); c.moveTo(...L(.36, .02)); c.lineTo(...L(.64, .02)); c.lineTo(...L(.64, .3)); c.bezierCurveTo(...L(.64, .4), ...L(1, .38), ...L(1, .5)); c.lineTo(...L(1, 1)); c.lineTo(...L(0, 1)); c.lineTo(...L(0, .5)); c.bezierCurveTo(...L(0, .38), ...L(.36, .4), ...L(.36, .3)); c.closePath();
+    c.fillStyle = hg(0, 1, '#10261b', '#2f5a40'); c.fill();
+    poly([[.33, 0], [.67, 0], [.67, .16], [.33, .16]], lg(0, .16, '#7a2236', '#4a1020'));
+    poly([[.06, .58], [.94, .58], [.94, .86], [.06, .86]], '#efe5cf');
+    c.fillStyle = '#5b1a2b'; poly([[.2, .64], [.8, .64], [.8, .67], [.2, .67]], '#5b1a2b'); poly([[.28, .72], [.72, .72], [.72, .74], [.28, .74]], '#8a7a5a'); poly([[.3, .78], [.7, .78], [.7, .8], [.3, .8]], '#8a7a5a');
+  }
+  c.restore();
+}
+
+const $ = s => document.querySelector(s), fmt = mm => (Math.round(mm) / 10).toFixed(1).replace('.', ',');
+async function decode(h) {
+  const b64 = h.replace(/-/g, '+').replace(/_/g, '/'), bin = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const txt = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  return JSON.parse(txt);
+}
+function woodTex(vertical) {
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
+  x.fillStyle = '#ddb27a'; x.fillRect(0, 0, 512, 128);
+  for (let i = 0; i < 26; i++) { const y0 = rng(3, i) * 128, a = 2 + rng(5, i) * 5, f = .01 + rng(8, i) * .02; x.strokeStyle = `rgba(${150 + rng(1, i) * 40 | 0},${95 + rng(2, i) * 30 | 0},50,${.18 + rng(4, i) * .25})`; x.lineWidth = .8 + rng(6, i) * 1.6; x.beginPath(); for (let px = 0; px <= 512; px += 8) { const y = y0 + Math.sin(px * f + i) * a; px ? x.lineTo(px, y) : x.moveTo(px, y); } x.stroke(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; if (vertical) { t.center.set(.5, .5); t.rotation = Math.PI / 2; } return t;
+}
+function build(M) {
+  // tout en mètres, bas du meuble au niveau 0, centré en largeur ; le dos du meuble est à z = 0 (côté mur)
+  const S = .001, scene = new THREE.Scene(); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const [x, y, w, h] of M.b) { x0 = Math.min(x0, x); x1 = Math.max(x1, x + w); y0 = Math.min(y0, y); y1 = Math.max(y1, y + h); }
+  for (const [px0, py0, , px1, py1] of M.p || []) { x0 = Math.min(x0, px0); x1 = Math.max(x1, px1); y0 = Math.min(y0, py0); y1 = Math.max(y1, py1); }
+  const cx = (x0 + x1) / 2, P = (x, y, z) => [(x - cx) * S, (y - y0) * S, z * S];
+  const wood = { h: new THREE.MeshStandardMaterial({ map: woodTex(false), roughness: .8 }), v: new THREE.MeshStandardMaterial({ map: woodTex(true), roughness: .8 }) };
+  for (const [x, y, w, h, d, o] of M.b) { const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, h * S, d * S), o === 'v' ? wood.v : wood.h); m.position.set(...P(x + w / 2, y + h / 2, d / 2)); scene.add(m); }
+  // portes, tiroirs, pieds, tasseaux, fonds : [x0, y0, z0, x1, y1, z1, matière ('w' = pin ou couleur), forme]
+  const pm = {};
+  for (const [px0, py0, pz0, px1, py1, pz1, col, shape] of M.p || []) {
+    const w = px1 - px0, h = py1 - py0, d = pz1 - pz0, mat = col === 'w' ? (w > h ? wood.h : wood.v) : (pm[col] || (pm[col] = new THREE.MeshStandardMaterial({ color: col, roughness: .7, metalness: col === '#2a2a2a' ? .6 : 0 })));
+    const geo = shape === 'cyl' ? new THREE.CylinderGeometry(w / 2 * S, w / 2 * S, h * S, 24) : shape === 'cone' ? new THREE.CylinderGeometry(w / 2 * S, w * .28 * S, h * S, 24) : shape === 'pin' ? new THREE.CylinderGeometry(.004, .004, h * S, 8) : new THREE.BoxGeometry(w * S, h * S, d * S);
+    const m = new THREE.Mesh(geo, mat); m.position.set(...P(px0 + w / 2, py0 + h / 2, pz0 + d / 2)); scene.add(m);
+    if (shape === 'porte' || shape === 'tiroir') { const hm = pm.h || (pm.h = new THREE.MeshStandardMaterial({ color: '#3d2a17', roughness: .5 })), v = shape === 'porte', hb = new THREE.Mesh(new THREE.BoxGeometry((v ? 10 : Math.min(140, w * .3)) * S, (v ? Math.min(140, h * .3) : 10) * S, 14 * S), hm); hb.position.set(...P(px0 + w / 2, v ? py0 + h / 2 : py1 - Math.min(h * .35, 50), pz1 + 7)); scene.add(hb); }
+  }
+  const bm = {}; for (const [x, y, w, h, z0, z1, col] of M.k || []) { const mat = bm[col] || (bm[col] = new THREE.MeshStandardMaterial({ color: col, roughness: .85 })); const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, h * S, (z1 - z0) * S), mat); m.position.set(...P(x + w / 2, y + h / 2, (z0 + z1) / 2)); scene.add(m); }
+  for (const [t, x, y, h, z] of M.o || []) {
+    if (!OBJS[t]) continue; const w = h * OBJS[t].r, c = document.createElement('canvas'); c.height = 512; c.width = Math.round(512 * OBJS[t].r); paintObj(c.getContext('2d'), t, 0, 0, c.width, c.height);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w * S, h * S), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: .05, side: THREE.DoubleSide })); m.position.set(...P(x, y + h / 2, z)); scene.add(m);
+  }
+  return { scene, W: x1 - x0, H: y1 - y0 };
+}
+let blobUrl = null, DIM = null;
+const SZK = 'atelier.ar.scale';
+function setScale(pc, save = true) {
+  pc = Math.max(70, Math.min(130, Math.round(pc))); const k = pc / 100;
+  $('#mv').scale = `${k} ${k} ${k}`; $('#szS').value = pc;
+  $('#szV').innerHTML = pc === 100 ? `Vraie grandeur<small>${DIM ? `${fmt(DIM.W)} × ${fmt(DIM.H)} cm` : ''}</small>` : `${pc} %<small>touche ici pour revenir à 100 %</small>`;
+  if (save) try { localStorage.setItem(SZK, pc); } catch { }
+}
+// les touches sur le panneau ne doivent pas déplacer le meuble pendant la RA
+$('#sz').addEventListener('beforexrselect', e => e.preventDefault());
+['pointerdown', 'touchstart'].forEach(t => $('#sz').addEventListener(t, e => e.stopPropagation()));
+$('#szM').onclick = () => setScale(+$('#szS').value - 1);
+$('#szP').onclick = () => setScale(+$('#szS').value + 1);
+$('#szS').oninput = () => setScale(+$('#szS').value);
+$('#szV').onclick = () => setScale(100);
+(async () => {
+  const mv = $('#mv'), h = location.hash.slice(1);
+  if (!h) { $('#msg').textContent = 'Aucun meuble : ouvre cette page depuis le bouton « Voir chez moi » de la vue 3D de l\'app.'; return; }
+  $('#msg').textContent = 'Préparation du meuble…';
+  try {
+    const M = await decode(h), { scene, W, H } = build(M);
+    $('#name').textContent = M.n || 'Mon meuble'; $('#dims').textContent = `${fmt(W)} × ${fmt(H)} cm · vraie grandeur`; document.title = (M.n || 'Mon meuble') + ' · chez moi';
+    const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+    blobUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' })); mv.src = blobUrl; $('#msg').textContent = '';
+    if (M.wall) setPl('wall');
+    DIM = { W, H }; let pc = 100; try { pc = +localStorage.getItem(SZK) || 100; } catch { }
+    setScale(pc, false); $('#sz').classList.add('on');
+  } catch (e) { $('#msg').textContent = 'Lien illisible : rouvre-le depuis l\'app. (' + (e.message || e) + ')'; }
+  mv.addEventListener('ar-status', ev => { if (ev.detail.status === 'failed') $('#note').textContent = 'La réalité augmentée n\'a pas démarré. Il faut Chrome sur un Android compatible ARCore (Services Google Play pour la RA).'; });
+  setTimeout(() => { if (!mv.canActivateAR) $('#note').textContent = 'La réalité augmentée n\'est pas disponible ici. Ouvre cette page dans Chrome sur ton téléphone Android (avec « Services Google Play pour la RA »). Tu peux quand même faire tourner le meuble en 3D.'; }, 2500);
+})();
+function setPl(p) { $('#mv').setAttribute('ar-placement', p); document.querySelectorAll('[data-pl]').forEach(b => b.classList.toggle('on', b.dataset.pl === p)); }
+document.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => setPl(b.dataset.pl));
+</script>
+</body>
+</html>
