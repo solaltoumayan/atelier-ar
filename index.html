@@ -18,6 +18,13 @@ model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-
 .seg button{border:none;background:#fff;padding:9px 16px;font:inherit}.seg button.on{background:var(--ink);color:#fff}
 #arBtn{border:none;background:var(--acc);color:#fff;font:700 18px inherit;padding:16px;border-radius:14px;width:100%}
 #note{font-size:13px;color:var(--mute)}
+#sz{position:absolute;top:12px;left:64px;right:12px;display:none;flex-direction:column;gap:6px;background:rgba(255,253,249,.94);border:1px solid var(--line);border-radius:14px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.15);z-index:5}
+#sz.on{display:flex}
+#sz .r{display:flex;align-items:center;gap:8px}
+#sz button{border:1px solid var(--line);background:#fff;border-radius:10px;font-size:24px;font-weight:700;width:46px;height:42px;flex:none;color:var(--ink);padding:0}
+#sz input{width:100%;margin:0;accent-color:var(--acc)}
+#szV{flex:1;text-align:center;font-weight:700;font-size:17px;line-height:1.15;border:none;background:none}
+#szV small{display:block;font-weight:400;font-size:11px;color:var(--mute)}
 #msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;color:var(--mute);max-width:80%}
 </style>
 </head>
@@ -27,12 +34,13 @@ model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-
   <div style="position:relative;flex:1;display:flex;min-height:0">
     <model-viewer id="mv" camera-controls touch-action="pan-y" shadow-intensity="1" exposure="1" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" ar-placement="floor" camera-orbit="-30deg 72deg auto">
       <button slot="ar-button" id="arBtn">📱 Voir chez moi en vraie grandeur</button>
+      <div id="sz"><div class="r"><button id="szM" aria-label="Plus petit">−</button><div id="szV">100 %<small></small></div><button id="szP" aria-label="Plus grand">+</button></div><input id="szS" type="range" min="70" max="130" step="1" value="100"></div>
     </model-viewer>
     <div id="msg"></div>
   </div>
   <div class="bar">
     <div class="seg"><button data-pl="floor" class="on">Posé au sol</button><button data-pl="wall">Fixé au mur</button></div>
-    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Il reste à l'échelle 1:1.</div>
+    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Si la taille ne te semble pas juste dans ta pièce, corrige-la avec − / + en haut (même pendant la caméra) ; touche le pourcentage pour revenir à la vraie grandeur.</div>
   </div>
 </div>
 <script type="module">
@@ -140,7 +148,21 @@ function build(M) {
   }
   return { scene, W: x1 - x0, H: y1 - y0 };
 }
-let blobUrl = null;
+let blobUrl = null, DIM = null;
+const SZK = 'atelier.ar.scale';
+function setScale(pc, save = true) {
+  pc = Math.max(70, Math.min(130, Math.round(pc))); const k = pc / 100;
+  $('#mv').scale = `${k} ${k} ${k}`; $('#szS').value = pc;
+  $('#szV').innerHTML = pc === 100 ? `Vraie grandeur<small>${DIM ? `${fmt(DIM.W)} × ${fmt(DIM.H)} cm` : ''}</small>` : `${pc} %<small>touche ici pour revenir à 100 %</small>`;
+  if (save) try { localStorage.setItem(SZK, pc); } catch { }
+}
+// les touches sur le panneau ne doivent pas déplacer le meuble pendant la RA
+$('#sz').addEventListener('beforexrselect', e => e.preventDefault());
+['pointerdown', 'touchstart'].forEach(t => $('#sz').addEventListener(t, e => e.stopPropagation()));
+$('#szM').onclick = () => setScale(+$('#szS').value - 1);
+$('#szP').onclick = () => setScale(+$('#szS').value + 1);
+$('#szS').oninput = () => setScale(+$('#szS').value);
+$('#szV').onclick = () => setScale(100);
 (async () => {
   const mv = $('#mv'), h = location.hash.slice(1);
   if (!h) { $('#msg').textContent = 'Aucun meuble : ouvre cette page depuis le bouton « Voir chez moi » de la vue 3D de l\'app.'; return; }
@@ -151,6 +173,8 @@ let blobUrl = null;
     const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
     blobUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' })); mv.src = blobUrl; $('#msg').textContent = '';
     if (M.wall) setPl('wall');
+    DIM = { W, H }; let pc = 100; try { pc = +localStorage.getItem(SZK) || 100; } catch { }
+    setScale(pc, false); $('#sz').classList.add('on');
   } catch (e) { $('#msg').textContent = 'Lien illisible : rouvre-le depuis l\'app. (' + (e.message || e) + ')'; }
   mv.addEventListener('ar-status', ev => { if (ev.detail.status === 'failed') $('#note').textContent = 'La réalité augmentée n\'a pas démarré. Il faut Chrome sur un Android compatible ARCore (Services Google Play pour la RA).'; });
   setTimeout(() => { if (!mv.canActivateAR) $('#note').textContent = 'La réalité augmentée n\'est pas disponible ici. Ouvre cette page dans Chrome sur ton téléphone Android (avec « Services Google Play pour la RA »). Tu peux quand même faire tourner le meuble en 3D.'; }, 2500);
