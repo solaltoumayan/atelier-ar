@@ -574,6 +574,8 @@ const BUILD = [
   ['h', '━', 'Planche horizontale'], ['v', '┃', 'Planche verticale'], ['rect', '▭', 'Caisson'],
   ['door', '🚪', 'Porte'], ['drawer', '🗄', 'Tiroirs'], ['leg', '🦵', 'Pieds'], ['cleat', '▪', 'Tasseaux'], ['back', '▦', 'Fond / dos'],
 ];
+// tailles courantes du commerce (hauteurs en cm) et largeur / diamètre typique (mm) ; en pin : planches de 18 collées
+const LEG_STD = { droit: { h: [10, 12, 15, 20], w: 30 }, rond: { h: [10, 15, 20], w: 40 }, carre: { h: [15, 25, 30, 40], w: 25 }, compas: { h: [15, 20, 25, 30], w: 60 }, epingle: { h: [10, 15, 20, 25, 30, 40, 72], w: 100 }, pin: { h: [10, 15, 20], w: 36 } };
 const LEG_SHAPES = { droit: 'Droit', compas: 'Compas', rond: 'Rond', carre: 'Carré', epingle: 'Épingle' };
 const PART_N = { porte: 'Porte', tiroir: 'Tiroirs', pied: 'Pied', tasseau: 'Tasseau', dos: 'Fond' };
 const PART_I = { porte: '🚪', tiroir: '🗄', pied: '🦵', tasseau: '▪', dos: '▦' };
@@ -787,7 +789,7 @@ function partTap(t, wx, wy) {
   if (!hb) return toast(k === 'pied' ? 'Touche juste sous la planche du bas' : 'Touche une étagère');
   if (k === 'pied') {
     const ex = parts('pied').filter(p => p.b === hb.id); if (ex.length) { selPart = ex[0]; panelOn = true; return changed(false); }
-    const last = [...parts('pied')].pop(), base = last ? { h: last.h, w: last.w, shape: last.shape, src: last.src, ins: last.ins, pair: last.pair } : { h: 150, w: 40, shape: 'droit', src: 'achat', ins: 30, pair: true };
+    const last = [...parts('pied')].pop(), base = last ? { h: last.h, w: last.w, shape: last.shape, src: last.src, ins: last.ins, pair: last.pair } : { h: 150, w: 30, shape: 'droit', src: 'achat', ins: 30, pair: true };
     pushUndo(); const L = rect(hb).x1 - rect(hb).x0, ps = L >= 2 * (base.w + base.ins) + 40 ? [{ ...base, side: 'l' }, { ...base, side: 'r' }] : [{ ...base, side: 'c' }];
     const np = ps.map(o => ({ id: uid(), k, b: hb.id, ...o })); D.parts.push(...np);
     return done(np[0], `${np.length * (base.pair === false ? 1 : 2)} pieds de ${fmt(base.h)} cm (avant + arrière)`);
@@ -822,6 +824,9 @@ function partPanel(p) {
   } else if (p.k === 'pied') {
     h += lab('Le pied est…') + segH('src', p.src, [['achat', '🛒 Acheté'], ['pin', '🪵 En pin (fait maison)']]);
     if (p.src !== 'pin') h += lab('Forme') + segH('shape', p.shape, Object.entries(LEG_SHAPES));
+    const std = LEG_STD[p.src === 'pin' ? 'pin' : p.shape] || LEG_STD.droit;
+    h += lab(p.src === 'pin' ? 'Hauteurs pratiques' : 'Tailles du commerce') + `<div class="row" style="margin-top:0;gap:5px">${std.h.map(v => `<button class="btn${Math.abs(p.h - v * 10) < .5 ? ' on' : ''}" data-lh="${v * 10}" style="padding:6px 10px">${v} cm</button>`).join('')}</div>`;
+    if (p.src === 'pin') h += `<div class="row" style="margin-top:4px;gap:5px">${[[36, '3,6 × 3,6 (2 planches collées)'], [54, '5,4 × 5,4 (3 planches)']].map(([v, l]) => `<button class="btn${Math.abs(p.w - v) < .5 ? ' on' : ''}" data-lw="${v}" style="padding:6px 10px">${l}</button>`).join('')}</div>`;
     h += `<div class="grid2" style="margin-top:8px">${field('Hauteur (cm)', 'ph', p.h)}${field(p.src === 'pin' ? 'Section (cm)' : (p.shape === 'rond' || p.shape === 'compas' ? 'Diamètre (cm)' : 'Largeur (cm)'), 'pw', p.w)}${p.side !== 'c' ? field('Retrait du bord (cm)', 'pins', p.ins) : ''}</div>`;
     h += lab('Position') + segH('side', p.side, [['l', 'Gauche'], ['c', 'Centre'], ['r', 'Droite']]);
     h += lab('En profondeur') + segH('pair', p.pair === false ? 0 : 1, [[1, 'Avant + arrière (×2)'], [0, 'Un seul']]);
@@ -839,12 +844,16 @@ function partPanel(p) {
   }
   h += `<div class="row">${(p.k === 'porte' || p.k === 'tiroir') ? '<button class="btn" id="pWhole">⤢ Tout le caisson</button>' : ''}<button class="btn danger" id="pPDel">🗑 Supprimer</button></div>`;
   P.style.display = 'block'; P.innerHTML = h;
-  const set = (fn) => { pushUndo(); fn(); changed(); };
+  // un pied et son jumeau posés sous la même planche changent ensemble (forme, taille, retrait)
+  const sync = () => { if (p.k !== 'pied') return; for (const q of parts('pied')) if (q !== p && q.b === p.b) { Object.assign(q, { h: p.h, w: p.w, shape: p.shape, src: p.src, pair: p.pair }); if (q.side !== 'c' && p.side !== 'c') q.ins = p.ins; } };
+  const set = (fn) => { pushUndo(); fn(); sync(); changed(); };
   const num = v => v === '1' || v === '0' || /^\d+$/.test(v) ? +v : v;
   for (const key of ['mount', 'leaves', 'hinge', 'n', 'slide', 'src', 'shape', 'side', 'pair', 'mat', 'ep']) P.querySelectorAll(`[data-${key}]`).forEach(bt => bt.onclick = () => set(() => {
     let v = num(bt.dataset[key]); if (key === 'pair') v = v === 1;
-    p[key] = v; if (key === 'src' && v === 'pin' && p.w < 30) p.w = 45;
+    p[key] = v; if (key === 'src' || key === 'shape') p.w = (LEG_STD[p.src === 'pin' ? 'pin' : p.shape] || LEG_STD.droit).w;
   }));
+  P.querySelectorAll('[data-lh]').forEach(bt => bt.onclick = () => set(() => p.h = +bt.dataset.lh));
+  P.querySelectorAll('[data-lw]').forEach(bt => bt.onclick = () => set(() => p.w = +bt.dataset.lw));
   const inp = (k_, prop, min) => { const i = P.querySelector(`[data-k="${k_}"]`); if (i) i.onchange = () => { const v = parseCm(i.value); if (!(v >= min)) { i.value = fmt(p[prop]); return toast('Valeur non comprise'); } set(() => p[prop] = v); }; };
   inp('pj', 'j', 0); inp('ph', 'h', 10); inp('pw', 'w', 5); inp('pins', 'ins', 0); inp('ps', 's', 10);
   if ($('#pAll')) $('#pAll').onclick = () => set(() => { for (const q of parts('pied')) Object.assign(q, { h: p.h, w: p.w, shape: p.shape, src: p.src, pair: p.pair, ins: q.side === 'c' ? q.ins : p.ins }); });
