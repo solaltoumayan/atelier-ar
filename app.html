@@ -72,6 +72,10 @@ td.num{font-variant-numeric:tabular-nums;font-weight:700}
 #kp button.ok{background:var(--acc)}
 #kp button.sm{font-size:17px}
 input.kpOn{outline:3px solid var(--acc)!important}
+#buildMenu{position:fixed;z-index:22;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(60,40,10,.22);padding:8px;display:none;grid-template-columns:repeat(4,1fr);gap:6px;width:min(400px,calc(100vw - 16px))}
+#buildMenu button{display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 4px;font-size:12px;line-height:1.15;text-align:center;color:var(--ink)}
+#buildMenu button .bi{font-size:22px;line-height:1}
+#buildMenu button.on{background:#fde3d3;border-color:var(--acc)}
 #eyeMenu{position:fixed;z-index:22;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 12px 40px rgba(60,40,10,.2);padding:6px;display:none;min-width:230px}
 #eyeMenu button{display:flex;align-items:center;gap:10px;width:100%;border:none;background:none;padding:11px 10px;border-radius:9px;font-size:15px;text-align:left}
 #eyeMenu button:active{background:#f3ead9}
@@ -129,9 +133,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
   </div>
   <div id="tools">
     <button class="btn on" data-tool="sel"><span class="ico">➚</span><span><span class="lbl-d">Sélection</span><span class="lbl-m">Choix</span></span></button>
-    <button class="btn" data-tool="h"><span class="ico">━</span><span>Planche<span class="lbl-d"> horizontale</span></span></button>
-    <button class="btn" data-tool="v"><span class="ico">┃</span><span>Planche<span class="lbl-d"> verticale</span></span></button>
-    <button class="btn" data-tool="rect"><span class="ico">▭</span><span>Caisson</span></button>
+    <button class="btn" id="bBuild"><span class="ico">🔨</span><span class="bl">Construire</span></button>
     <button class="btn" data-tool="dim"><span class="ico">📏</span><span>Cote</span></button>
     <button class="btn" data-tool="book"><span class="ico">📚</span><span>Déco</span></button>
     <button class="btn" id="bRoom"><span class="ico">📷</span><span>Pièce</span></button>
@@ -154,6 +156,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 <div id="modal"><div class="box" id="mbox"></div></div>
 <div id="toast"></div>
 <div id="eyeMenu"></div>
+<div id="buildMenu"></div>
 <div id="kp"><div class="in"><div class="kpd"><span id="kpL"></span><span><i id="kpR"></i> <b id="kpV"></b></span></div><div class="g" id="kpG"></div></div></div>
 <script>
 "use strict";
@@ -161,7 +164,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DEF_SETTINGS = { t: 18, d: 200, stock: 2000, assembly: 'top', screwsPerJoint: 2, screwType: '4 × 40 mm', showGaps: true };
-function newDesign() { return { id: uid(), name: 'Nouveau meuble', boards: [], guides: [], books: [], objs: [], dims: {}, cdims: [], screws: {}, settings: { ...DEF_SETTINGS }, updatedAt: Date.now() }; }
+function newDesign() { return { id: uid(), name: 'Nouveau meuble', boards: [], guides: [], books: [], objs: [], dims: {}, cdims: [], screws: {}, parts: [], settings: { ...DEF_SETTINGS }, updatedAt: Date.now() }; }
 let D = newDesign();
 let sel = new Set();
 let tool = 'sel';
@@ -181,12 +184,12 @@ function parseCm(str) {
   if (!/^[0-9.+\-*/()]+$/.test(s)) return NaN;
   try { const v = Function('"use strict";return(' + s + ')')(); return Number.isFinite(v) ? Math.round(v * 10) : NaN; } catch { return NaN; }
 }
-function snapshot() { return JSON.stringify({ boards: D.boards, guides: D.guides, books: D.books, dims: D.dims, cdims: D.cdims, objs: D.objs, screws: D.screws, settings: D.settings }); }
+function snapshot() { return JSON.stringify({ boards: D.boards, guides: D.guides, books: D.books, dims: D.dims, cdims: D.cdims, objs: D.objs, screws: D.screws, parts: D.parts || [], settings: D.settings }); }
 const HMAX = 300; let histT = null;
 function saveHist() { clearTimeout(histT); const id = D.id; histT = setTimeout(() => { for (const n of [120, 60, 25]) { try { localStorage.setItem('atelier.hist.' + id, JSON.stringify({ u: undoS.slice(-n), r: redoS.slice(-n) })); return; } catch { } } }, 400); }
 function loadHist() { undoS.length = redoS.length = 0; try { const h = JSON.parse(localStorage.getItem('atelier.hist.' + D.id)); if (h) { undoS.push(...(h.u || [])); redoS.push(...(h.r || [])); } } catch { } }
 function pushUndo(pre) { const snap = pre ?? snapshot(); if (undoS[undoS.length - 1] === snap) return; undoS.push(snap); if (undoS.length > HMAX) undoS.shift(); redoS.length = 0; saveHist(); }
-function restore(json) { const o = JSON.parse(json); D.boards = o.boards; D.guides = o.guides; D.books = o.books || []; D.dims = o.dims || {}; D.cdims = o.cdims || []; D.objs = o.objs || []; D.screws = o.screws || {}; if (selObj) selObj = D.objs.find(x => x.id === selObj.id) || null; if (o.settings) D.settings = { ...o.settings, showGaps: D.settings.showGaps, showBooks: D.settings.showBooks, showGuides: D.settings.showGuides, showCross: D.settings.showCross, showObjs: D.settings.showObjs, showNames: D.settings.showNames }; if (selGuide) selGuide = D.guides.find(g => g.id === selGuide.id) || null; sel = new Set([...sel].filter(id => byId(id))); if (selBook && !D.books.find(k => k.id === selBook.id)) selBook = null; else if (selBook) selBook = D.books.find(k => k.id === selBook.id); }
+function restore(json) { const o = JSON.parse(json); D.boards = o.boards; D.guides = o.guides; D.books = o.books || []; D.dims = o.dims || {}; D.cdims = o.cdims || []; D.objs = o.objs || []; D.screws = o.screws || {}; D.parts = o.parts || []; if (selPart) selPart = D.parts.find(x => x.id === selPart.id) || null; if (selObj) selObj = D.objs.find(x => x.id === selObj.id) || null; if (o.settings) D.settings = { ...o.settings, showGaps: D.settings.showGaps, showBooks: D.settings.showBooks, showGuides: D.settings.showGuides, showCross: D.settings.showCross, showObjs: D.settings.showObjs, showNames: D.settings.showNames, showFronts: D.settings.showFronts }; if (selGuide) selGuide = D.guides.find(g => g.id === selGuide.id) || null; sel = new Set([...sel].filter(id => byId(id))); if (selBook && !D.books.find(k => k.id === selBook.id)) selBook = null; else if (selBook) selBook = D.books.find(k => k.id === selBook.id); }
 function undo() { if (!undoS.length) return toast('Rien à annuler'); redoS.push(snapshot()); restore(undoS.pop()); selDim = null; saveHist(); changed(); toast(`↶ Annulé · encore ${undoS.length} retour${undoS.length > 1 ? 's' : ''} possible${undoS.length > 1 ? 's' : ''}`); }
 function redo() { if (!redoS.length) return toast('Rien à rétablir'); undoS.push(snapshot()); restore(redoS.pop()); selDim = null; saveHist(); changed(); toast('↷ Rétabli'); }
 
@@ -205,7 +208,7 @@ function bbox(list = D.boards) {
   return { x0, y0, x1, y1 };
 }
 function fitView() {
-  const bb = bbox() || { x0: 0, y0: 0, x1: 1400, y1: 1000 };
+  const bb = partsExtent(bbox()) || { x0: 0, y0: 0, x1: 1400, y1: 1000 };
   const pad = 60, pw = W - 2 * R - pad * 2, ph = H - 2 * R - pad * 2 - (window.innerWidth < 720 && sel.size ? H * .3 : 0);
   const bw_ = Math.max(bb.x1 - bb.x0, 200), bh_ = Math.max(bb.y1 - bb.y0, 200);
   Vw.s = Math.max(.02, Math.min(pw / bw_, ph / bh_, 6));
@@ -340,6 +343,13 @@ function cutData() {
   // découpe par section (épaisseur × largeur), sans trait de scie
   const stock = S().stock, sections = new Map();
   for (const g of arr) { const k = g.t + '×' + g.d; if (!sections.has(k)) sections.set(k, { t: g.t, d: g.d, pieces: [] }); for (const _ of g.ids) sections.get(k).pieces.push({ L: g.L, letter: g.letter }); }
+  // portes, tiroirs, fonds en pin : coupés dans les mêmes planches (refendues si besoin) ; pieds en pin et tasseaux : dans des tasseaux
+  const pc = partsCut();
+  for (const x of pc.pieces) {
+    const tass = x.sec === 'tass', k = tass ? 'T' + x.w + '×' + x.t : x.t + '×' + S().d;
+    if (!sections.has(k)) sections.set(k, tass ? { t: x.t, d: x.w, tass: true, pieces: [] } : { t: x.t, d: S().d, pieces: [] });
+    for (let i = 0; i < x.q; i++) sections.get(k).pieces.push({ L: x.L, letter: x.code });
+  }
   const plans = [];
   for (const sec of sections.values()) {
     const bins = [], tooLong = [];
@@ -354,7 +364,7 @@ function cutData() {
   }
   // jonctions vissées : un bout de planche contre la face d'une autre ; chaque jonction peut avoir son propre nombre de vis
   const J = jointList();
-  return { groups: arr, letter, plans, joints: J.length, screws: J.reduce((n, j) => n + screwsOf(j), 0) };
+  return { groups: arr, letter, plans, parts: pc, joints: J.length, screws: J.reduce((n, j) => n + screwsOf(j), 0) };
 }
 function jointList() { // A = planche dont le chant reçoit les vis ; B = planche traversée (face d'où l'on visse)
   const out = [], eps = .6;
@@ -555,6 +565,333 @@ function objPointerDown(base, sx, sy, wx, wy, touch) {
   selObj = o; selBook = null; sel.clear(); selDim = null; drag = { ...base, type: 'omove', o, w0: [wx, wy], orig: { x: o.x, y: o.y } }; changed(false); return true;
 }
 
+// ---------- Construction : portes, tiroirs, pieds, tasseaux, fonds ----------
+// Chaque élément est accroché à des planches (par leur id) : il suit tout seul quand le caisson bouge ou change de taille.
+// porte / tiroir / fond : a = { l, r, b, t } = montant gauche, montant droit, planche du bas, planche du haut de la case
+// pied / tasseau : b = planche (horizontale) qui le porte, side = 'l' | 'r' | 'c'
+const PT = { door: 'porte', drawer: 'tiroir', leg: 'pied', cleat: 'tasseau', back: 'dos' };
+const BUILD = [
+  ['h', '━', 'Planche horizontale'], ['v', '┃', 'Planche verticale'], ['rect', '▭', 'Caisson'],
+  ['door', '🚪', 'Porte'], ['drawer', '🗄', 'Tiroirs'], ['leg', '🦵', 'Pieds'], ['cleat', '▪', 'Tasseaux'], ['back', '▦', 'Fond / dos'],
+];
+// tailles courantes du commerce (hauteurs en cm) et largeur / diamètre typique (mm) ; en pin : planches de 18 collées
+const LEG_STD = { droit: { h: [10, 12, 15, 20], w: 30 }, rond: { h: [10, 15, 20], w: 40 }, carre: { h: [15, 25, 30, 40], w: 25 }, compas: { h: [15, 20, 25, 30], w: 60 }, epingle: { h: [10, 15, 20, 25, 30, 40, 72], w: 100 }, pin: { h: [10, 15, 20], w: 36 } };
+const LEG_SHAPES = { droit: 'Droit', compas: 'Compas', rond: 'Rond', carre: 'Carré', epingle: 'Épingle' };
+const PART_N = { porte: 'Porte', tiroir: 'Tiroirs', pied: 'Pied', tasseau: 'Tasseau', dos: 'Fond' };
+const PART_I = { porte: '🚪', tiroir: '🗄', pied: '🦵', tasseau: '▪', dos: '▦' };
+let selPart = null;
+const SLIDES = [600, 550, 500, 450, 400, 350, 300, 250];
+
+function partValid(p) {
+  if (p.a) return ['l', 'r', 'b', 't'].every(k => byId(p.a[k]));
+  return !!(p.b && byId(p.b));
+}
+const parts = k => (D.parts || []).filter(p => (!k || p.k === k) && partValid(p));
+function cellRect(a) { const l = rect(byId(a.l)), r = rect(byId(a.r)), b = rect(byId(a.b)), t = rect(byId(a.t)); return { x0: l.x1, x1: r.x0, y0: b.y1, y1: t.y0 }; }
+function outerRect(a) { const l = rect(byId(a.l)), r = rect(byId(a.r)), b = rect(byId(a.b)), t = rect(byId(a.t)); return { x0: l.x0, x1: r.x1, y0: b.y0, y1: t.y1 }; }
+// la case autour d'un point : les planches les plus proches à gauche, à droite, en dessous et au-dessus
+function cellAt(wx, wy) {
+  const rs = D.boards.map(b => ({ b, ...rect(b) }));
+  const unders = rs.filter(r => r.b.o === 'h' && r.x0 <= wx + .5 && r.x1 >= wx - .5 && r.y1 <= wy + .5);
+  const overs = rs.filter(r => r.b.o === 'h' && r.x0 <= wx + .5 && r.x1 >= wx - .5 && r.y0 >= wy - .5);
+  if (!unders.length || !overs.length) return null;
+  const B = unders.reduce((a, c) => c.y1 > a.y1 ? c : a), T = overs.reduce((a, c) => c.y0 < a.y0 ? c : a);
+  const side = rs.filter(r => r.b.o === 'v' && r.y0 < T.y0 - .5 && r.y1 > B.y1 + .5);
+  const lefts = side.filter(r => r.x1 <= wx + .5), rights = side.filter(r => r.x0 >= wx - .5);
+  if (!lefts.length || !rights.length) return null;
+  const L = lefts.reduce((a, c) => c.x1 > a.x1 ? c : a), Rr = rights.reduce((a, c) => c.x0 < a.x0 ? c : a);
+  return { l: L.b.id, r: Rr.b.id, b: B.b.id, t: T.b.id };
+}
+// le cadre entier du caisson qui contient la case
+function frameAnchors(wx, wy) {
+  const c = caissonAt(wx, wy); if (!c) return null;
+  const Hs = c.f.filter(b => b.o === 'h').sort((a, b) => a.y - b.y), Vs = c.f.filter(b => b.o === 'v').sort((a, b) => a.x - b.x);
+  if (Hs.length < 2 || Vs.length < 2) return null;
+  return { l: Vs[0].id, r: Vs[Vs.length - 1].id, b: Hs[0].id, t: Hs[Hs.length - 1].id };
+}
+const sameA = (a, b) => a && b && a.l === b.l && a.r === b.r && a.b === b.b && a.t === b.t;
+// en applique : la façade couvre toute l'épaisseur d'une planche du bord du meuble, la moitié d'une planche partagée
+function overlaps(p) {
+  const bb = bbox(), j = p.j, o = (id, edge) => { const b = byId(id), r = rect(b), t = b.t; const out = edge === 'l' ? Math.abs(r.x0 - bb.x0) < 1 : edge === 'r' ? Math.abs(r.x1 - bb.x1) < 1 : edge === 'b' ? Math.abs(r.y0 - bb.y0) < 1 : Math.abs(r.y1 - bb.y1) < 1; return out ? t : t / 2 - j / 2; };
+  return { l: o(p.a.l, 'l'), r: o(p.a.r, 'r'), b: o(p.a.b, 'b'), t: o(p.a.t, 't') };
+}
+// rectangles des façades (vantaux de porte, façades de tiroir), en mm
+function fronts(p) {
+  const c = cellRect(p.a), j = p.j;
+  let x0, x1, y0, y1;
+  if (p.mount === 'enc') { x0 = c.x0 + j; x1 = c.x1 - j; y0 = c.y0 + j; y1 = c.y1 - j; }
+  else { const o = overlaps(p); x0 = c.x0 - o.l; x1 = c.x1 + o.r; y0 = c.y0 - o.b; y1 = c.y1 + o.t; }
+  const out = [];
+  if (p.k === 'porte') {
+    if (p.leaves === 2) { const w = (x1 - x0 - j) / 2; out.push({ x0, x1: x0 + w, y0, y1, hinge: 'g' }, { x0: x1 - w, x1, y0, y1, hinge: 'd' }); }
+    else out.push({ x0, x1, y0, y1, hinge: p.hinge || 'g' });
+  } else { const n = Math.max(1, p.n | 0), h = (y1 - y0 - (n - 1) * j) / n; for (let i = 0; i < n; i++) out.push({ x0, x1, y0: y0 + i * (h + j), y1: y0 + i * (h + j) + h }); }
+  return out;
+}
+const hingesFor = h => h <= 900 ? 2 : h <= 1600 ? 3 : 4;
+function drawerBox(p) { // caisson d'un tiroir (dimensions extérieures)
+  const c = cellRect(p.a), t = S().t, n = Math.max(1, p.n | 0), zone = (c.y1 - c.y0) / n;
+  const avail = depth(byId(p.a.b)) - (p.mount === 'enc' ? t : 0) - 10;
+  let slide = p.slide === 'bois' ? 0 : SLIDES.find(L => L <= avail) || 0, note = '';
+  if (p.slide !== 'bois' && !slide) note = `Profondeur trop faible pour des coulisses à billes (250 mm mini) : glissières bois`;
+  const billes = p.slide !== 'bois' && slide;
+  const W = (c.x1 - c.x0) - (billes ? 25 : 4), H = Math.max(40, Math.round(zone - (billes ? 30 : 8))), Dp = billes ? slide : Math.floor(avail / 10) * 10;
+  return { W, H, D: Dp, slide: billes ? slide : 0, note, n };
+}
+function legGeom(p) { // pied : x du centre, haut (sous la planche), bas
+  const r = rect(byId(p.b)), w = p.w, cxl = p.side === 'r' ? r.x1 - p.ins - w / 2 : p.side === 'c' ? (r.x0 + r.x1) / 2 : r.x0 + p.ins + w / 2;
+  return { cx: cxl, top: r.y0, bot: r.y0 - p.h, w };
+}
+function cleatGeom(p) { const b = byId(p.b), r = rect(b), s = p.s; return { x0: p.side === 'r' ? r.x1 - s : r.x0, x1: p.side === 'r' ? r.x1 : r.x0 + s, y0: r.y0 - s, y1: r.y0, L: Math.max(10, depth(b) - 20) }; }
+const lames = (L, Wd) => { const sd = S().d, n = Math.max(1, Math.ceil(Wd / sd - 1e-6)); return { n, w: Math.round(Wd / n * 10) / 10, L: Math.round(L * 10) / 10 }; };
+// repères P1, T1… dans l'ordre de gauche à droite puis de bas en haut
+function partCodes() {
+  const c = {}, pre = { porte: 'Po', tiroir: 'Ti', dos: 'Fo' };
+  for (const k of ['porte', 'tiroir', 'dos']) parts(k).map(p => ({ p, r: cellRect(p.a) })).sort((a, b) => a.r.x0 - b.r.x0 || a.r.y0 - b.r.y0).forEach((o, i) => c[o.p.id] = pre[k] + (i + 1));
+  return c;
+}
+// pièces à couper (pin) et achats (quincaillerie, pieds achetés, contreplaqué)
+function partsCut() {
+  const pieces = [], buys = [], t = S().t, code = partCodes(), add = (o) => pieces.push({ t, sec: 'p', ...o });
+  const buy = (txt, q) => { const b = buys.find(x => x.txt === txt); if (b) b.q += q; else buys.push({ txt, q }); };
+  for (const p of parts('porte')) {
+    fronts(p).forEach((f, i) => { const l = lames(f.y1 - f.y0, f.x1 - f.x0), nm = 'Porte' + (p.leaves === 2 ? (i ? ' droite' : ' gauche') : ''); add({ code: code[p.id], name: nm + (l.n > 1 ? ` · ${l.n} lames collées` : ''), q: l.n, L: l.L, w: l.w }); buy(`Charnières invisibles Ø35 ${p.mount === 'enc' ? 'encastrées' : 'en applique'}`, hingesFor(f.y1 - f.y0)); });
+  }
+  for (const p of parts('tiroir')) {
+    const B = drawerBox(p), f = fronts(p)[0], n = B.n, fl = lames(f.x1 - f.x0, f.y1 - f.y0), cd = code[p.id];
+    add({ code: cd, name: 'Façade de tiroir' + (fl.n > 1 ? ` · ${fl.n} lames` : ''), q: n * fl.n, L: fl.L, w: fl.w });
+    const sl = lames(B.D, B.H), fa = lames(B.W - 2 * t, B.H), fo = lames(B.W, B.D);
+    add({ code: cd, name: 'Côté de tiroir', q: 2 * n * sl.n, L: sl.L, w: sl.w });
+    add({ code: cd, name: 'Avant / arrière de tiroir', q: 2 * n * fa.n, L: fa.L, w: fa.w });
+    add({ code: cd, name: 'Fond de tiroir' + (fo.n > 1 ? ` · ${fo.n} lames` : ''), q: n * fo.n, L: fo.L, w: fo.w });
+    if (B.slide) buy(`Coulisses à billes ${B.slide} mm (paire)`, n);
+  }
+  for (const p of parts('pied')) {
+    const q = p.pair === false ? 1 : 2;
+    if (p.src === 'pin') pieces.push({ code: 'Pi', name: `Pied en pin ${fmt(p.w)} × ${fmt(p.w)}`, q, L: p.h, w: p.w, t: p.w, sec: 'tass' });
+    else buy(`Pied ${LEG_SHAPES[p.shape] || 'droit'} · ${fmt(p.h)} cm`, q);
+  }
+  for (const p of parts('tasseau')) { const g = cleatGeom(p); pieces.push({ code: 'Ta', name: `Tasseau ${fmt(p.s)} × ${fmt(p.s)}`, q: 1, L: g.L, w: p.s, t: p.s, sec: 'tass' }); }
+  for (const p of parts('dos')) {
+    const o = outerRect(p.a), W_ = o.x1 - o.x0, H_ = o.y1 - o.y0;
+    if (p.mat === 'pin') { const l = lames(H_, W_); add({ code: code[p.id], name: `Fond en pin · ${l.n} lames`, q: l.n, L: l.L, w: l.w }); }
+    else buy(`Contreplaqué ${p.ep || 5} mm · ${fmt(W_)} × ${fmt(H_)} cm (${code[p.id]})`, 1);
+  }
+  // regroupe les pièces identiques
+  const m = new Map(); for (const x of pieces) { const k = [x.code, x.name, x.L, x.w, x.t].join('|'); if (m.has(k)) m.get(k).q += x.q; else m.set(k, { ...x }); }
+  return { pieces: [...m.values()], buys };
+}
+const legTotal = () => { const ls = parts('pied'); return ls.length ? Math.max(...ls.map(p => p.h)) : 0; };
+
+// ---------- Dessin ----------
+function drawBacks() {
+  for (const p of parts('dos')) {
+    const o = outerRect(p.a), [ax, ay] = toS(o.x0, o.y1), [bx, by] = toS(o.x1, o.y0), on = selPart === p;
+    cx.save(); cx.beginPath(); cx.rect(ax, ay, bx - ax, by - ay); cx.clip();
+    cx.fillStyle = p.mat === 'pin' ? 'rgba(224,180,124,.35)' : 'rgba(196,170,130,.28)'; cx.fillRect(ax, ay, bx - ax, by - ay);
+    cx.strokeStyle = 'rgba(120,90,50,.22)'; cx.lineWidth = 1; cx.beginPath(); for (let x = ax - (by - ay); x < bx; x += 12) { cx.moveTo(x, by); cx.lineTo(x + (by - ay), ay); } cx.stroke();
+    cx.restore();
+    if (on) { cx.strokeStyle = '#d9480f'; cx.lineWidth = 2; cx.setLineDash([6, 4]); cx.strokeRect(ax - 3, ay - 3, bx - ax + 6, by - ay + 6); cx.setLineDash([]); }
+  }
+}
+function drawFronts() {
+  const showF = vis('showFronts'), code = partCodes();
+  for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) {
+    const on = selPart === p;
+    for (const f of fronts(p)) {
+      const [ax, ay] = toS(f.x0, f.y1), [bx, by] = toS(f.x1, f.y0), w = bx - ax, h = by - ay;
+      if (!showF && !on) { cx.strokeStyle = 'rgba(107,74,43,.45)'; cx.lineWidth = 1; cx.setLineDash([5, 4]); cx.strokeRect(ax, ay, w, h); cx.setLineDash([]); continue; }
+      cx.fillStyle = on ? 'rgba(244,196,140,.94)' : 'rgba(231,192,140,.93)'; cx.fillRect(ax, ay, w, h);
+      cx.strokeStyle = 'rgba(120,80,40,.18)'; cx.lineWidth = 1; cx.beginPath();
+      if (p.k === 'porte') for (let i = 1; i < 4; i++) { const x = ax + w * i / 4 + (i % 2 ? 3 : -2); cx.moveTo(x, ay + 4); cx.lineTo(x - 2, by - 4); }
+      else for (let i = 1; i < 3; i++) { const y = ay + h * i / 3; cx.moveTo(ax + 4, y); cx.lineTo(bx - 4, y + 1.5); }
+      cx.stroke();
+      cx.strokeStyle = on ? '#d9480f' : '#6b4a2b'; cx.lineWidth = on ? 2 : 1.2; cx.strokeRect(ax + .5, ay + .5, w - 1, h - 1);
+      cx.strokeStyle = '#3d2a17'; cx.lineWidth = Math.max(2, Math.min(4, Vw.s * 10)); cx.lineCap = 'round'; cx.beginPath();
+      if (p.k === 'porte') {
+        // sens d'ouverture : la pointe du triangle est du côté des charnières
+        const hx = f.hinge === 'd' ? bx : ax, ox = f.hinge === 'd' ? ax : bx;
+        cx.save(); cx.strokeStyle = 'rgba(61,42,23,.45)'; cx.lineWidth = 1; cx.setLineDash([6, 4]); cx.beginPath(); cx.moveTo(ox, ay + 3); cx.lineTo(hx, ay + h / 2); cx.lineTo(ox, by - 3); cx.stroke(); cx.restore();
+        const px = f.hinge === 'd' ? ax + Math.max(8, 30 * Vw.s) : bx - Math.max(8, 30 * Vw.s), ph = Math.min(h * .3, Math.max(14, 120 * Vw.s)); cx.moveTo(px, ay + h / 2 - ph / 2); cx.lineTo(px, ay + h / 2 + ph / 2);
+      } else { const pw = Math.min(w * .3, Math.max(14, 120 * Vw.s)), py = ay + Math.min(h * .35, Math.max(10, 40 * Vw.s)); cx.moveTo(ax + w / 2 - pw / 2, py); cx.lineTo(ax + w / 2 + pw / 2, py); }
+      cx.stroke(); cx.lineCap = 'butt';
+    }
+    if (showF && vis('showNames')) { const f = fronts(p)[0], [x, y] = toS(f.x0, f.y1); cx.font = '800 11px -apple-system,Segoe UI,sans-serif'; const tw = cx.measureText(code[p.id]).width + 10; cx.fillStyle = 'rgba(255,253,249,.95)'; rrect(x + 4, y + 4, tw, 17, 8); cx.fill(); cx.fillStyle = '#b5400c'; cx.textAlign = 'left'; cx.textBaseline = 'middle'; cx.fillText(code[p.id], x + 9, y + 13); }
+  }
+}
+function drawLegs() {
+  const ls = parts('pied'); let left = null;
+  for (const p of ls) {
+    const g = legGeom(p), on = selPart === p, [ax, ay] = toS(g.cx - g.w / 2, g.top), [bx, by] = toS(g.cx + g.w / 2, g.bot), w = bx - ax, h = by - ay;
+    if (!left || g.cx < left.g.cx) left = { p, g };
+    const shape = p.src === 'pin' ? 'carre' : p.shape, wood = p.src === 'pin' ? '#e0b47c' : '#c8955a', edge = on ? '#d9480f' : '#5a3d22';
+    cx.lineWidth = on ? 2 : 1.2; cx.strokeStyle = edge;
+    if (shape === 'epingle') {
+      const out = (p.side === 'r' ? 1 : p.side === 'l' ? -1 : 0) * w * .25; cx.strokeStyle = on ? '#d9480f' : '#222'; cx.lineWidth = Math.max(1.5, 8 * Vw.s); cx.beginPath(); cx.moveTo(ax + 1, ay); cx.lineTo(ax + w / 2 + out, by); cx.lineTo(bx - 1, ay); cx.stroke();
+      cx.fillStyle = '#222'; cx.fillRect(ax - 1, ay, w + 2, Math.max(2, 4 * Vw.s));
+    } else if (shape === 'compas') {
+      const out = (p.side === 'r' ? 1 : p.side === 'l' ? -1 : 0) * h * .12, bw2 = w * .55;
+      cx.fillStyle = wood; cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, ay); cx.lineTo(ax + w / 2 + out + bw2 / 2, by); cx.lineTo(ax + w / 2 + out - bw2 / 2, by); cx.closePath(); cx.fill(); cx.stroke();
+      cx.fillStyle = '#b8a27c'; cx.fillRect(ax + w / 2 + out - bw2 / 2, by - Math.max(2, 25 * Vw.s), bw2, Math.max(2, 25 * Vw.s));
+    } else {
+      cx.fillStyle = wood; if (shape === 'rond') { rrect(ax, ay, w, h, Math.min(w / 2, 4)); cx.fill(); cx.stroke(); cx.strokeStyle = 'rgba(255,255,255,.35)'; cx.lineWidth = Math.max(1, w * .15); cx.beginPath(); cx.moveTo(ax + w * .3, ay + 2); cx.lineTo(ax + w * .3, by - 2); cx.stroke(); }
+      else { cx.fillRect(ax, ay, w, h); cx.strokeRect(ax + .5, ay + .5, w - 1, h - 1); }
+    }
+  }
+  // hauteur des pieds (cote) à gauche du pied le plus à gauche
+  if (left && vis('showGaps')) {
+    const { p, g } = left, [x, y1] = toS(g.cx - g.w / 2, g.top), [, y2] = toS(0, g.bot), lx = x - 14;
+    cx.strokeStyle = '#24506e'; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(lx, y1); cx.lineTo(lx, y2); cx.moveTo(lx - 4, y1); cx.lineTo(lx + 4, y1); cx.moveTo(lx - 4, y2); cx.lineTo(lx + 4, y2); cx.stroke();
+    if (y2 - y1 > 24) dimLabel(fmt(p.h), lx, (y1 + y2) / 2, '#24506e', false, true);
+  }
+}
+function drawCleats() {
+  for (const p of parts('tasseau')) { const g = cleatGeom(p), [ax, ay] = toS(g.x0, g.y1), [bx, by] = toS(g.x1, g.y0), on = selPart === p; cx.fillStyle = on ? '#f4c48c' : '#c99a62'; cx.fillRect(ax, ay, bx - ax, by - ay); cx.strokeStyle = on ? '#d9480f' : '#5a3d22'; cx.lineWidth = on ? 2 : 1; cx.strokeRect(ax + .5, ay + .5, bx - ax - 1, by - ay - 1); cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.moveTo(bx, ay); cx.lineTo(ax, by); cx.strokeStyle = 'rgba(90,61,34,.35)'; cx.stroke(); }
+}
+function hitPart(sx, sy) {
+  const [wx, wy] = toW(sx, sy), tol = 4 / Vw.s, inR = (x0, x1, y0, y1) => wx >= x0 - tol && wx <= x1 + tol && wy >= y0 - tol && wy <= y1 + tol;
+  for (const p of parts('pied')) { const g = legGeom(p); if (inR(g.cx - g.w / 2 - 6 / Vw.s, g.cx + g.w / 2 + 6 / Vw.s, g.bot, g.top)) return p; }
+  for (const p of parts('tasseau')) { const g = cleatGeom(p); if (inR(g.x0, g.x1, g.y0, g.y1)) return p; }
+  if (vis('showFronts')) for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) for (const f of fronts(p)) if (inR(f.x0, f.x1, f.y0, f.y1)) return p;
+  return null;
+}
+function partsExtent(bb) { // encombrement avec pieds et façades en applique
+  if (!bb) return bb; const e = { ...bb };
+  for (const p of parts('pied')) { const g = legGeom(p); e.y0 = Math.min(e.y0, g.bot); }
+  for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) for (const f of fronts(p)) { e.x0 = Math.min(e.x0, f.x0); e.x1 = Math.max(e.x1, f.x1); e.y0 = Math.min(e.y0, f.y0); e.y1 = Math.max(e.y1, f.y1); }
+  return e;
+}
+
+// ---------- Poser un élément (touche simple avec un outil Construction) ----------
+function partTap(t, wx, wy) {
+  const k = PT[t]; D.parts = D.parts || [];
+  const done = (p, msg) => { selPart = p; panelOn = true; changed(); if (msg) toast(msg); };
+  if (k === 'porte' || k === 'tiroir') {
+    const a = cellAt(wx, wy); if (!a) return toast('Touche l\'intérieur d\'une case (entre 4 planches)');
+    const ex = parts().find(p => (p.k === 'porte' || p.k === 'tiroir') && (sameA(p.a, a) || inBB({ x0: wx, x1: wx, y0: wy, y1: wy }, cellRect(p.a))));
+    if (ex) { selPart = ex; panelOn = true; return changed(false); }
+    const c = cellRect(a), last = [...parts(k)].pop();
+    pushUndo();
+    const p = k === 'porte' ? { id: uid(), k, a, mount: last ? last.mount : 'app', leaves: c.x1 - c.x0 > 600 ? 2 : 1, hinge: 'g', j: last ? last.j : 3 }
+      : { id: uid(), k, a, mount: last ? last.mount : 'app', n: 1, slide: last ? last.slide : 'billes', j: last ? last.j : 3 };
+    D.parts.push(p);
+    const msg = k === 'tiroir' && drawerBox(p).note ? drawerBox(p).note : (k === 'porte' ? `Porte ${fmt(fronts(p).reduce((s, f) => s + f.x1 - f.x0, 0))} × ${fmt(fronts(p)[0].y1 - fronts(p)[0].y0)} cm` : 'Tiroir ajouté');
+    return done(p, msg);
+  }
+  if (k === 'dos') {
+    const a = frameAnchors(wx, wy) || cellAt(wx, wy); if (!a) return toast('Touche l\'intérieur d\'un caisson');
+    const ex = parts('dos').find(p => sameA(p.a, a)); if (ex) { selPart = ex; panelOn = true; return changed(false); }
+    pushUndo(); const last = [...parts('dos')].pop(), p = { id: uid(), k, a, mat: last ? last.mat : 'cp', ep: last ? last.ep : 5 }; D.parts.push(p);
+    const o = outerRect(a); return done(p, `Fond ${fmt(o.x1 - o.x0)} × ${fmt(o.y1 - o.y0)} cm`);
+  }
+  // pieds et tasseaux : sur une planche horizontale
+  const hb = (() => { const h = hitBoard(...toS(wx, wy)); if (h && h.o === 'h') return h; let best = null, bd = 1e9; for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (wx < r.x0 - 5 || wx > r.x1 + 5) continue; const d = k === 'pied' ? r.y0 - wy : Math.abs((r.y0 + r.y1) / 2 - wy); if (d < -40 / Vw.s || Math.abs(d) > 400) continue; if (Math.abs(d) < bd) { bd = Math.abs(d); best = b; } } return best; })();
+  if (!hb) return toast(k === 'pied' ? 'Touche juste sous la planche du bas' : 'Touche une étagère');
+  if (k === 'pied') {
+    const ex = parts('pied').filter(p => p.b === hb.id); if (ex.length) { selPart = ex[0]; panelOn = true; return changed(false); }
+    const last = [...parts('pied')].pop(), base = last ? { h: last.h, w: last.w, shape: last.shape, src: last.src, ins: last.ins, pair: last.pair } : { h: 150, w: 30, shape: 'droit', src: 'achat', ins: 30, pair: true };
+    pushUndo(); const L = rect(hb).x1 - rect(hb).x0, ps = L >= 2 * (base.w + base.ins) + 40 ? [{ ...base, side: 'l' }, { ...base, side: 'r' }] : [{ ...base, side: 'c' }];
+    const np = ps.map(o => ({ id: uid(), k, b: hb.id, ...o })); D.parts.push(...np);
+    return done(np[0], `${np.length * (base.pair === false ? 1 : 2)} pieds de ${fmt(base.h)} cm (avant + arrière)`);
+  }
+  if (k === 'tasseau') {
+    if (parts('tasseau').some(p => p.b === hb.id)) { selPart = parts('tasseau').find(p => p.b === hb.id); panelOn = true; return changed(false); }
+    pushUndo(); const s = ([...parts('tasseau')].pop() || { s: 20 }).s, np = ['l', 'r'].map(side => ({ id: uid(), k, b: hb.id, side, s })); D.parts.push(...np);
+    return done(np[0], `2 tasseaux de ${fmt(cleatGeom(np[0]).L)} cm sous l'étagère`);
+  }
+}
+
+// ---------- Fiche de l'élément sélectionné ----------
+function segH(name, cur, opts) { return `<div class="seg" style="flex-wrap:wrap">${opts.map(([v, l]) => `<button data-${name}="${v}" class="${String(cur) === String(v) ? 'on' : ''}">${l}</button>`).join('')}</div>`; }
+function partPanel(p) {
+  const P = $('#panel'), code = partCodes()[p.id], title = `${PART_I[p.k]} ${PART_N[p.k]}${code ? ` <span class="tag">${code}</span>` : ''}`;
+  const lab = t => `<div style="font-size:12px;font-weight:700;margin:8px 0 3px">${t}</div>`, info = t => `<div style="font-size:12px;color:var(--mute);margin-top:6px;line-height:1.45">${t}</div>`;
+  let h = `<h3 style="gap:6px"><span style="flex:1">${title}</span><button class="btn" id="pClose">✕</button></h3>`;
+  if (p.k === 'porte') {
+    const fs = fronts(p), f = fs[0], c = cellRect(p.a);
+    h += info(`Case ${fmt(c.x1 - c.x0)} × ${fmt(c.y1 - c.y0)} cm → ${fs.length > 1 ? '2 vantaux de ' : 'porte de '}<b style="color:var(--ink)">${fmt(f.x1 - f.x0)} × ${fmt(f.y1 - f.y0)} cm</b>, ${fs.reduce((n, x) => n + hingesFor(x.y1 - x.y0), 0)} charnières`);
+    h += lab('Pose') + segH('mount', p.mount, [['app', 'En applique'], ['enc', 'Encastrée']]);
+    h += lab('Vantaux') + segH('leaves', p.leaves || 1, [[1, '1 porte'], [2, '2 portes']]);
+    if ((p.leaves || 1) === 1) h += lab('Charnières') + segH('hinge', p.hinge || 'g', [['g', '◧ À gauche'], ['d', '◨ À droite']]);
+    h += `<div class="grid2" style="margin-top:8px">${field('Jeu (cm)', 'pj', p.j)}</div>`;
+  } else if (p.k === 'tiroir') {
+    const B = drawerBox(p), f = fronts(p)[0];
+    h += info(`${B.n} tiroir${B.n > 1 ? 's' : ''} · façade <b style="color:var(--ink)">${fmt(f.x1 - f.x0)} × ${fmt(f.y1 - f.y0)} cm</b><br>Caisson du tiroir : ${fmt(B.W)} × ${fmt(B.H)} × ${fmt(B.D)} cm (larg. × haut. × prof.)${B.slide ? ` · coulisses ${B.slide} mm` : ''}${B.note ? `<br><b style="color:#b42318">${B.note}</b>` : ''}`);
+    h += lab('Nombre dans la case') + segH('n', B.n, [[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']]);
+    h += lab('Pose de la façade') + segH('mount', p.mount, [['app', 'En applique'], ['enc', 'Encastrée']]);
+    h += lab('Coulisses') + segH('slide', p.slide, [['billes', 'À billes'], ['bois', 'Glissières bois']]);
+    h += `<div class="grid2" style="margin-top:8px">${field('Jeu (cm)', 'pj', p.j)}</div>`;
+  } else if (p.k === 'pied') {
+    h += lab('Le pied est…') + segH('src', p.src, [['achat', '🛒 Acheté'], ['pin', '🪵 En pin (fait maison)']]);
+    if (p.src !== 'pin') h += lab('Forme') + segH('shape', p.shape, Object.entries(LEG_SHAPES));
+    const std = LEG_STD[p.src === 'pin' ? 'pin' : p.shape] || LEG_STD.droit;
+    h += lab(p.src === 'pin' ? 'Hauteurs pratiques' : 'Tailles du commerce') + `<div class="row" style="margin-top:0;gap:5px">${std.h.map(v => `<button class="btn${Math.abs(p.h - v * 10) < .5 ? ' on' : ''}" data-lh="${v * 10}" style="padding:6px 10px">${v} cm</button>`).join('')}</div>`;
+    if (p.src === 'pin') h += `<div class="row" style="margin-top:4px;gap:5px">${[[36, '3,6 × 3,6 (2 planches collées)'], [54, '5,4 × 5,4 (3 planches)']].map(([v, l]) => `<button class="btn${Math.abs(p.w - v) < .5 ? ' on' : ''}" data-lw="${v}" style="padding:6px 10px">${l}</button>`).join('')}</div>`;
+    h += `<div class="grid2" style="margin-top:8px">${field('Hauteur (cm)', 'ph', p.h)}${field(p.src === 'pin' ? 'Section (cm)' : (p.shape === 'rond' || p.shape === 'compas' ? 'Diamètre (cm)' : 'Largeur (cm)'), 'pw', p.w)}${p.side !== 'c' ? field('Retrait du bord (cm)', 'pins', p.ins) : ''}</div>`;
+    h += lab('Position') + segH('side', p.side, [['l', 'Gauche'], ['c', 'Centre'], ['r', 'Droite']]);
+    h += lab('En profondeur') + segH('pair', p.pair === false ? 0 : 1, [[1, 'Avant + arrière (×2)'], [0, 'Un seul']]);
+    const bb = bbox(); h += info(`Hauteur totale avec pieds : <b style="color:var(--ink)">${fmt(bb.y1 - Math.min(bb.y0, legGeom(p).bot))} cm</b>. Glisse le pied pour le décaler.`);
+    h += `<div class="row"><button class="btn" id="pAll">Appliquer à tous les pieds</button><button class="btn" id="pAdd">+ Un pied ici</button></div>`;
+  } else if (p.k === 'tasseau') {
+    const g = cleatGeom(p);
+    h += info(`Sous l'étagère, vissé dans le montant. Longueur ${fmt(g.L)} cm (profondeur − 2 cm).`);
+    h += `<div class="grid2" style="margin-top:8px">${field('Section (cm)', 'ps', p.s)}</div>`;
+  } else if (p.k === 'dos') {
+    const o = outerRect(p.a);
+    h += info(`Cloué au dos du caisson : <b style="color:var(--ink)">${fmt(o.x1 - o.x0)} × ${fmt(o.y1 - o.y0)} cm</b>`);
+    h += lab('Matière') + segH('mat', p.mat, [['cp', 'Contreplaqué'], ['pin', `Pin ${fmt(S().t)}`]]);
+    if (p.mat !== 'pin') h += lab('Épaisseur') + segH('ep', p.ep || 5, [[3, '3 mm'], [5, '5 mm'], [8, '8 mm']]);
+  }
+  h += `<div class="row">${(p.k === 'porte' || p.k === 'tiroir') ? '<button class="btn" id="pWhole">⤢ Tout le caisson</button>' : ''}<button class="btn danger" id="pPDel">🗑 Supprimer</button></div>`;
+  P.style.display = 'block'; P.innerHTML = h;
+  // un pied et son jumeau posés sous la même planche changent ensemble (forme, taille, retrait)
+  const sync = () => { if (p.k !== 'pied') return; for (const q of parts('pied')) if (q !== p && q.b === p.b) { Object.assign(q, { h: p.h, w: p.w, shape: p.shape, src: p.src, pair: p.pair }); if (q.side !== 'c' && p.side !== 'c') q.ins = p.ins; } };
+  const set = (fn) => { pushUndo(); fn(); sync(); changed(); };
+  const num = v => v === '1' || v === '0' || /^\d+$/.test(v) ? +v : v;
+  for (const key of ['mount', 'leaves', 'hinge', 'n', 'slide', 'src', 'shape', 'side', 'pair', 'mat', 'ep']) P.querySelectorAll(`[data-${key}]`).forEach(bt => bt.onclick = () => set(() => {
+    let v = num(bt.dataset[key]); if (key === 'pair') v = v === 1;
+    p[key] = v; if (key === 'src' || key === 'shape') p.w = (LEG_STD[p.src === 'pin' ? 'pin' : p.shape] || LEG_STD.droit).w;
+  }));
+  P.querySelectorAll('[data-lh]').forEach(bt => bt.onclick = () => set(() => p.h = +bt.dataset.lh));
+  P.querySelectorAll('[data-lw]').forEach(bt => bt.onclick = () => set(() => p.w = +bt.dataset.lw));
+  const inp = (k_, prop, min) => { const i = P.querySelector(`[data-k="${k_}"]`); if (i) i.onchange = () => { const v = parseCm(i.value); if (!(v >= min)) { i.value = fmt(p[prop]); return toast('Valeur non comprise'); } set(() => p[prop] = v); }; };
+  inp('pj', 'j', 0); inp('ph', 'h', 10); inp('pw', 'w', 5); inp('pins', 'ins', 0); inp('ps', 's', 10);
+  if ($('#pAll')) $('#pAll').onclick = () => set(() => { for (const q of parts('pied')) Object.assign(q, { h: p.h, w: p.w, shape: p.shape, src: p.src, pair: p.pair, ins: q.side === 'c' ? q.ins : p.ins }); });
+  if ($('#pAdd')) $('#pAdd').onclick = () => set(() => { const q = { ...p, id: uid(), side: 'c' }; D.parts.push(q); selPart = q; });
+  if ($('#pWhole')) $('#pWhole').onclick = () => { const c = cellRect(p.a), a = frameAnchors((c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2); if (!a || sameA(a, p.a)) return toast('Déjà à la taille du caisson'); set(() => { p.a = a; D.parts = D.parts.filter(q => q === p || !((q.k === 'porte' || q.k === 'tiroir') && inBB(cellRect(q.a), cellRect(a)))); }); };
+  $('#pPDel').onclick = () => set(() => { D.parts = D.parts.filter(q => q !== p); selPart = null; });
+  $('#pClose').onclick = () => { selPart = null; changed(false); };
+}
+function buildHelp() {
+  const P = $('#panel'), k = PT[tool], txt = {
+    porte: 'Touche une case : une porte la ferme. Ensuite tu choisis en applique ou encastrée, 1 ou 2 vantaux, le côté des charnières.',
+    tiroir: 'Touche une case : elle devient un tiroir. Tu peux en mettre plusieurs l\'un au-dessus de l\'autre. Le caisson du tiroir est calculé et ajouté au débit.',
+    pied: 'Touche sous la planche du bas : 2 pieds se posent aux extrémités (×2 avec ceux de derrière). Achetés ou en pin, à la hauteur que tu veux.',
+    tasseau: 'Touche une étagère : 2 tasseaux se posent dessous, contre les montants, pour la porter.',
+    dos: 'Touche un caisson : un fond se pose derrière, à ses dimensions extérieures (contreplaqué ou pin).',
+  }[k];
+  P.style.display = 'block';
+  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' ? 's' : k === 'porte' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>`;
+  $('#pClose').onclick = () => setTool('sel');
+}
+
+// ---------- Menu Construction ----------
+function updateBuildBtn() {
+  const b = $('#bBuild'), it = BUILD.find(x => x[0] === tool);
+  b.classList.toggle('on', !!it);
+  b.querySelector('.ico').textContent = it ? it[1] : '🔨';
+  b.querySelector('.bl').textContent = it ? ({ h: 'Planche', v: 'Planche', back: 'Fond' }[it[0]] || it[2]) : 'Construire';
+}
+function openBuild() {
+  const m = $('#buildMenu');
+  if (m.style.display === 'grid') { m.style.display = 'none'; return; }
+  m.innerHTML = BUILD.map(([t, ic, n]) => `<button data-bt="${t}" class="${tool === t ? 'on' : ''}"><span class="bi">${ic}</span><span>${n}</span></button>`).join('');
+  m.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { m.style.display = 'none'; setTool(b.dataset.bt); });
+  m.style.display = 'grid'; const r = $('#bBuild').getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(r.left + r.width / 2 - m.offsetWidth / 2, innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.bottom = (innerHeight - r.top + 8) + 'px';
+}
+
 // ---------- Dessin ----------
 const STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
 const niceStep = (px, list = STEPS) => list.find(s => s * Vw.s >= px) || list[list.length - 1];
@@ -588,12 +925,14 @@ function draw() {
   cx.fillStyle = '#faf7f1'; cx.fillRect(0, 0, W, H);
   cx.save(); cx.beginPath(); cx.rect(R, R, W - 2 * R, H - 2 * R); cx.clip();
   drawGrid();
-  const cd = cutData();
+  drawBacks();
   if (tool === 'book') cx.globalAlpha = .5;
   for (const b of D.boards) drawBoard(b, sel.has(b.id), null);
   cx.globalAlpha = 1;
   if (S().showBooks !== false) for (const k of D.books) drawBookRow(k, selBook === k);
   drawObjs();
+  drawCleats(); drawLegs();
+  if (tool === 'book') cx.globalAlpha = .3; drawFronts(); cx.globalAlpha = 1;
 
   if (preview) for (const b of preview) drawBoard(b, false, null, true);
   if (tool === 'dim' && drag && drag.type === 'cdim' && drag.moved) { const A = drag.A, B = drag.B, X = Math.abs(B[0] - A[0]) >= Math.abs(B[1] - A[1]), a = X ? Math.min(A[0], B[0]) : Math.min(A[1], B[1]), b = X ? Math.max(A[0], B[0]) : Math.max(A[1], B[1]), pa = X ? (A[0] <= B[0] ? A[1] : B[1]) : (A[1] <= B[1] ? A[0] : B[0]), pb = X ? (A[0] <= B[0] ? B[1] : A[1]) : (A[1] <= B[1] ? B[0] : A[0]); if (b - a > .5) { placed = []; drawDim({ dir: X ? 'h' : 'v', key: 'preview', a, b, v: b - a, lo: X ? A[1] : A[0], hi: X ? A[1] : A[0], at: X ? A[1] : A[0], pa, pb }); } }
@@ -1001,6 +1340,12 @@ cv.addEventListener('pointerdown', e => {
     const g = { id: uid(), axis, pos: axis === 'h' ? Math.round(wy) : Math.round(wx) };
     drag = { ...base, type: 'guide', g, fresh: true, raw: g.pos, last: { p, t: e.timeStamp } }; return;
   }
+  if (PT[tool]) {
+    base.pw = panelOn; panelOn = false;
+    const hp = hitPart(sx, sy);
+    if (hp && hp.k === 'pied') { selPart = hp; const g = legGeom(hp); drag = { ...base, type: 'pmove', p: hp, dx: wx - g.cx, ox: Vw.ox, oy: Vw.oy }; changed(false); return; }
+    drag = { ...base, type: 'pan', ox: Vw.ox, oy: Vw.oy, partTap: [wx, wy] }; return;
+  }
   if (tool === 'book') {
     // mode Livres : on ne touche qu'aux livres ; les meubles ne réagissent pas
     base.pw = panelOn; panelOn = false;
@@ -1024,6 +1369,8 @@ cv.addEventListener('pointerdown', e => {
   { const hd = (sel.size === 1 || selBook) ? hitDim(sx, sy, touch ? 8 : 5) : null; if (hd) { selDim = hd.key; sel.clear(); selBook = null; const st = D.dims[hd.key]; drag = { ...base, type: 'dim', hd, locked: !!(st && st.lk), ox: Vw.ox, oy: Vw.oy }; changed(false); return; } }
   if (objPointerDown(base, sx, sy, wx, wy, touch)) return;
   selObj = null;
+  { const hp = hitPart(sx, sy); if (hp) { selPart = hp; sel.clear(); selBook = null; selDim = null; const g = hp.k === 'pied' ? legGeom(hp) : null; drag = { ...base, type: hp.k === 'pied' ? 'pmove' : 'ptap', p: hp, dx: g ? wx - g.cx : 0, ox: Vw.ox, oy: Vw.oy }; changed(false); return; } }
+  selPart = null;
   // 1re touche sur un caisson -> tout le caisson ; touche suivante -> la pièce touchée
   const hb = hitBoard(sx, sy), hk = hb ? null : hitBook(sx, sy), cz = caissonAt(wx, wy);
   const csel = sel.size > 1 && caissonOf(sel), czSelected = !!(cz && csel && csel.frame[0].g === cz.f[0].g);
@@ -1056,7 +1403,12 @@ cv.addEventListener('pointermove', e => {
   if (!drag.moved && drag.type === 'guide') { drag.last = { p: drag.start, t: e.timeStamp - 16 }; if (drag.fresh) drag.raw = drag.g.axis === 'h' ? toW(...p)[1] : toW(...p)[0]; }
   drag.moved = true;
   const [sx, sy] = p, [wx, wy] = toW(sx, sy);
-  if (drag.type === 'pan') { Vw.ox = drag.ox + sx - drag.start[0]; Vw.oy = drag.oy + sy - drag.start[1]; }
+  if (drag.type === 'pan' || drag.type === 'ptap') { Vw.ox = drag.ox + sx - drag.start[0]; Vw.oy = drag.oy + sy - drag.start[1]; }
+  else if (drag.type === 'pmove') {
+    const p = drag.p, r = rect(byId(p.b)), w = p.w; let c = clamp(wx - drag.dx, r.x0 + w / 2, r.x1 - w / 2);
+    const mid = (r.x0 + r.x1) / 2; if (Math.abs(c - mid) < 8 / Vw.s) { p.side = 'c'; c = mid; } else if (c < mid) { p.side = 'l'; p.ins = Math.round(c - w / 2 - r.x0); } else { p.side = 'r'; p.ins = Math.round(r.x1 - c - w / 2); }
+    liveLabel = [sx, sy, p.side === 'c' ? 'Centré' : 'Retrait ' + fmt(p.ins) + ' cm'];
+  }
   else if (drag.type === 'cdim') { drag.B = snapPt(wx, wy); if (!drag.second) liveLabel = [sx, sy, (Math.abs(drag.B[0] - drag.A[0]) >= Math.abs(drag.B[1] - drag.A[1]) ? fmt(Math.abs(drag.B[0] - drag.A[0])) : fmt(Math.abs(drag.B[1] - drag.A[1]))) + ' cm']; }
   else if (drag.type === 'corner') {
     restore(drag.pre); const c = drag.corner, b0 = drag.bb0, t3 = 3 * S().t;
@@ -1175,10 +1527,14 @@ function endPointer(e) {
   if (d.type === 'corner') { if (d.moved) pushUndo(d.pre); panelOn = !d.moved; changed(d.moved); return; }
   if (d.type === 'dim') { panelOn = !d.moved; if (d.moved && !d.locked) pushUndo(d.pre); changed(d.moved && !d.locked); return; }
   if (d.type === 'bmove' || d.type === 'bstretch') { panelOn = !d.moved; if (d.moved && !d.locked) pushUndo(d.pre); changed(d.moved); return; }
+  if (d.type === 'pan' && d.partTap && !d.moved) { partTap(tool, ...d.partTap); return; }
+  if (d.type === 'pan' && d.partTap) { panelOn = d.pw; draw(); return; }
+  if (d.type === 'ptap') { panelOn = !d.moved || d.pw; changed(false); return; }
+  if (d.type === 'pmove') { panelOn = !d.moved; if (d.moved) pushUndo(d.pre); changed(d.moved); return; }
   if (d.type === 'pan' && d.bookTap && !d.moved) { selBook = null; selObj = null; if (objKind) placeObj(...d.bookTap); else fillCompartment(...d.bookTap); return; }
   if (d.type === 'move' || d.type === 'stretch') { panelOn = !d.moved; if (d.moved) { if (!d.locked) pushUndo(d.pre); } else if (d.type === 'move' && d.wasSel && d.pw && d.tapped && !e.shiftKey) sel = new Set([d.tapped.id]); changed(d.moved); return; }
   if (d.type === 'marquee') { const [a, b] = marquee; marquee = null; const [x0, y1] = toW(Math.min(a[0], b[0]), Math.min(a[1], b[1])), [x1, y0] = toW(Math.max(a[0], b[0]), Math.max(a[1], b[1])); for (const bd of D.boards) { const r = rect(bd); if (r.x1 > x0 && r.x0 < x1 && r.y1 > y0 && r.y0 < y1) sel.add(bd.id); } panelOn = true; changed(false); return; }
-  if (d.type === 'pan' && !d.moved && d.clear) { sel.clear(); selBook = null; selObj = null; selDim = null; selGuide = null; changed(false); return; }
+  if (d.type === 'pan' && !d.moved && d.clear) { sel.clear(); selPart = null; selBook = null; selObj = null; selDim = null; selGuide = null; changed(false); return; }
   draw();
 }
 function cancelDrag() { if (!drag) return; if (drag.type !== 'pan' && drag.moved) restore(drag.pre); drag = null; preview = null; marquee = null; liveLabel = null; loupe = null; guideDel = null; snapLines = { x: null, y: null }; snapKind = { x: null, y: null }; }
@@ -1223,13 +1579,16 @@ window.addEventListener('keydown', e => {
 
 // ---------- Panneau ----------
 let draft = { w: 600, h: 400, d: null, x: null, y: null };
-function setTool(t) { tool = t; dimA = null; selObj = null; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); if (t !== 'sel') { sel.clear(); selBook = null; } selDim = null; selGuide = null; if (t === 'rect') { draft.x = draft.y = null; } renderPanel(); draw(); }
+function setTool(t) { tool = t; dimA = null; selObj = null; selPart = null; $('#buildMenu').style.display = 'none'; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); if (t !== 'sel') { sel.clear(); selBook = null; } selDim = null; selGuide = null; if (t === 'rect') { draft.x = draft.y = null; } renderPanel(); draw(); }
 document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 const KPATTR = TOUCH ? 'data-kp readonly inputmode="none"' : 'data-kp inputmode="decimal"';
 function field(label, key, val) { return `<label class="f">${label}<input data-k="${key}" ${KPATTR} value="${fmt(val)}"></label>`; }
 function renderPanel() {
-  const p = $('#panel');
+  const p = $('#panel'); updateBuildBtn();
+  if (selPart && !partValid(selPart)) selPart = null;
+  if (selPart && panelOn) return partPanel(selPart);
+  if (PT[tool]) return buildHelp();
   const fmtChips = cur => Object.entries(BOOKS).map(([key, f]) => `<button class="btn${key === cur ? ' on' : ''}" data-f="${key}" style="padding:6px 9px">${f.n}</button>`).join('');
   if (tool === 'dim') {
     p.style.display = 'block';
@@ -1274,7 +1633,7 @@ function renderPanel() {
     $('#pClose').onclick = () => { selGuide = null; changed(false); };
     return;
   }
-  if ((selDim || selBook || selObj || sel.size) && !panelOn) { p.style.display = 'none'; return; }
+  if ((selDim || selBook || selObj || selPart || sel.size) && !panelOn) { p.style.display = 'none'; return; }
   if (selDim) {
     const st = D.dims[selDim] || {}, L = !!st.lk, h = dimHits.find(x => x.key === selDim);
     if (!h && selDim !== 'W' && selDim !== 'H') { selDim = null; p.style.display = 'none'; return; }
@@ -1425,7 +1784,7 @@ function decorateLock(p) {
     const n = document.createElement('div'); n.style.cssText = 'font-size:12px;color:var(--mute);margin:-2px 0 8px'; n.textContent = 'Verrouillé : rien ne bouge. Touche 🔒 pour modifier.'; h3.after(n);
   }
 }
-function changed(save = true) { renderPanel(); draw(); if (save) scheduleSave(); }
+function changed(save = true) { if (save && D.parts && D.parts.length) D.parts = D.parts.filter(partValid); renderPanel(); draw(); if (save) scheduleSave(); }
 
 // ---------- Fenêtres ----------
 function openModal(html) { $('#mbox').innerHTML = html; $('#modal').style.display = 'flex'; const c = $('#mbox [data-close]'); if (c) c.onclick = closeModal; }
@@ -1485,14 +1844,16 @@ function debitDialog() {
   let h = `<h2>Débit, découpe et vis<button class="btn" data-close>✕</button></h2>
     <div class="row" style="margin:0 0 6px"><button class="btn pri" id="dPdf">⬇ Exporter le PDF</button><button class="btn" id="dCopy">Copier la liste</button></div>
     <div class="sec">À acheter</div>`;
-  for (const p of cd.plans) h += `<div><span class="big">${p.bins.length}</span> planche${p.bins.length > 1 ? 's' : ''} de ${fmt(s.stock)} cm <span style="color:var(--mute)">· section ${fmt(p.t)} × ${fmt(p.d)}</span>${p.tooLong.length ? ` <b style="color:#b42318">+ ${p.tooLong.length} pièce(s) plus longue(s) que ${fmt(s.stock)} cm</b>` : ''}</div>`;
+  for (const p of cd.plans) h += `<div><span class="big">${p.bins.length}</span> ${p.tass ? 'tasseau' + (p.bins.length > 1 ? 'x' : '') : 'planche' + (p.bins.length > 1 ? 's' : '')} de ${fmt(s.stock)} cm <span style="color:var(--mute)">· section ${fmt(p.t)} × ${fmt(p.d)}</span>${p.tooLong.length ? ` <b style="color:#b42318">+ ${p.tooLong.length} pièce(s) plus longue(s) que ${fmt(s.stock)} cm</b>` : ''}</div>`;
+  for (const b of cd.parts.buys) h += `<div><span class="big">${b.q}</span> ${esc(b.txt)}</div>`;
   h += `<div class="sec">Liste de débit (${D.boards.length} pièces)</div><table><tr><th>Repère</th><th>Qté</th><th>Longueur</th><th>Épaisseur × largeur</th></tr>`;
   for (const g of cd.groups) h += `<tr><td><span class="tag">${g.letter}</span></td><td class="num">${g.ids.length}</td><td class="num">${fmt(g.L)} cm</td><td>${fmt(g.t)} × ${fmt(g.d)}</td></tr>`;
   { const bi = boardInfo(), pl = D.boards.map(b => ({ b, ...bi[b.id] })).sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
     h += `</table><div class="sec">Pièces</div><table><tr><th>Repère</th><th>Nom</th><th>Longueur</th></tr>` + pl.map(it => `<tr><td><span class="tag">${it.code}</span></td><td>${esc(it.name)}</td><td class="num">${fmt(it.b.L)} cm</td></tr>`).join(''); }
+  if (cd.parts.pieces.length) h += `</table><div class="sec">Portes, tiroirs, pieds, tasseaux, fonds</div><table><tr><th>Repère</th><th>Nom</th><th>Qté</th><th>Longueur</th><th>Largeur × ép.</th></tr>` + cd.parts.pieces.map(x => `<tr><td><span class="tag">${x.code}</span></td><td>${esc(x.name)}</td><td class="num">${x.q}</td><td class="num">${fmt(x.L)} cm</td><td>${fmt(x.w)} × ${fmt(x.t)}</td></tr>`).join('');
   h += `</table><div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
-    h += `<div style="font-size:12px;margin-top:8px"><b>Planche ${i + 1}</b> · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm</div><div class="bar">`;
+    h += `<div style="font-size:12px;margin-top:8px"><b>${p.tass ? 'Tasseau' : 'Planche'} ${i + 1}</b> · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm</div><div class="bar">`;
     for (const pc of bn.pieces) h += `<div style="width:${pc.L / s.stock * 100}%" title="${pc.letter} ${fmt(pc.L)}">${pc.letter} ${fmt(pc.L)}</div>`;
     h += `</div>`;
   });
@@ -1500,7 +1861,7 @@ function debitDialog() {
     <p style="color:var(--mute);font-size:12px">Une jonction = un bout de planche contre la face d'une autre. Prévois quelques vis de plus.</p>`;
   openModal(h);
   $('#dPdf').onclick = exportPdf;
-  $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; t += `Planches : ${nPlanks} × ${fmt(s.stock)} cm\nVis : ${cd.screws} × ${s.screwType}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
+  $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; for (const x of cd.parts.pieces) t += `${x.code}  ${x.q} × ${fmt(x.L)} cm  (${fmt(x.w)} × ${fmt(x.t)})  ${x.name}\n`; t += `Planches : ${nPlanks} × ${fmt(s.stock)} cm\nVis : ${cd.screws} × ${s.screwType}\n`; for (const b of cd.parts.buys) t += `${b.q} × ${b.txt}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
 }
 
 // ---------- PDF ----------
@@ -1514,7 +1875,7 @@ async function exportPdf() {
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110); doc.text(`Vue de face · cotes en cm · ${date}`, M, M + 8); doc.setTextColor(0);
   const bb = bbox(), top = M + 22, avW = PW - 2 * M - 20, avH = PH - top - M - 6;
   // cadrage : le meuble + les objets posés dessus (une plante sur le dessus ne doit pas sortir de la page)
-  const fb = { ...bb }; if (vis('showObjs')) for (const o of D.objs) { const w = objW(o); fb.x0 = Math.min(fb.x0, o.x - w / 2); fb.x1 = Math.max(fb.x1, o.x + w / 2); fb.y1 = Math.max(fb.y1, o.y + o.h); fb.y0 = Math.min(fb.y0, o.y); }
+  const fb = partsExtent({ ...bb }); if (vis('showObjs')) for (const o of D.objs) { const w = objW(o); fb.x0 = Math.min(fb.x0, o.x - w / 2); fb.x1 = Math.max(fb.x1, o.x + w / 2); fb.y1 = Math.max(fb.y1, o.y + o.h); fb.y0 = Math.min(fb.y0, o.y); }
   const k = Math.min(avW / (fb.x1 - fb.x0), avH / (fb.y1 - fb.y0)); const k_ = k;
   const ox = M + 20 + (avW - (fb.x1 - fb.x0) * k) / 2, oy = top + (avH - (fb.y1 - fb.y0) * k) / 2;
   const P = (x, y) => [ox + (x - fb.x0) * k, oy + (fb.y1 - y) * k];
@@ -1534,6 +1895,15 @@ async function exportPdf() {
     const c = document.createElement('canvas'), sc = Math.min(12, 900 / Math.max(pw, ph)); c.width = Math.ceil(pw * sc); c.height = Math.ceil(ph * sc); paintObj(c.getContext('2d'), o.t, 0, 0, c.width, c.height);
     try { doc.addImage(c.toDataURL('image/png'), 'PNG', x, y, pw, ph); } catch { }
   }
+  // pieds, tasseaux, portes et tiroirs (façades fermées)
+  doc.setLineWidth(.2); doc.setDrawColor(90, 61, 34);
+  for (const p of parts('tasseau')) { const g = cleatGeom(p), [x, y] = P(g.x0, g.y1); doc.setFillColor(201, 154, 98); doc.rect(x, y, (g.x1 - g.x0) * k, (g.y1 - g.y0) * k, 'FD'); }
+  for (const p of parts('pied')) { const g = legGeom(p), [x, y] = P(g.cx - g.w / 2, g.top); doc.setFillColor(p.shape === 'epingle' && p.src !== 'pin' ? 60 : 200, p.shape === 'epingle' && p.src !== 'pin' ? 60 : 149, p.shape === 'epingle' && p.src !== 'pin' ? 60 : 90); doc.rect(x, y, g.w * k, p.h * k, 'FD'); }
+  if (vis('showFronts')) { const pcode = partCodes(); for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) fronts(p).forEach((f, i) => {
+    const [x, y] = P(f.x0, f.y1), w = (f.x1 - f.x0) * k, h = (f.y1 - f.y0) * k; doc.setFillColor(236, 205, 160); doc.rect(x, y, w, h, 'FD');
+    if (p.k === 'porte') { const dsh = (doc.setLineDashPattern || doc.setLineDash); if (dsh) dsh.call(doc, [1.2, .8], 0); const hx = f.hinge === 'd' ? x + w : x, ox = f.hinge === 'd' ? x : x + w; doc.line(ox, y + .5, hx, y + h / 2); doc.line(hx, y + h / 2, ox, y + h - .5); if (dsh) dsh.call(doc, [], 0); }
+    if (!i) { doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(181, 64, 12); doc.text(pcode[p.id], x + 1.2, y + 3.2); doc.setTextColor(0); }
+  }); }
   doc.setLineWidth(.25);
   doc.setDrawColor(36, 80, 110); doc.setTextColor(36, 80, 110); doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
   for (const g of computeGaps()) {
@@ -1553,13 +1923,20 @@ async function exportPdf() {
   doc.addPage(); let y = M + 2;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text(`${D.name} — débit`, M, y); y += 8;
   doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-  for (const p of cd.plans) { doc.text(`À acheter : ${p.bins.length} planche(s) de ${fmt(s.stock)} cm, section ${fmt(p.t)} × ${fmt(p.d)} cm${p.tooLong.length ? `  (+${p.tooLong.length} pièce(s) trop longue(s))` : ''}`, M, y); y += 5.5; }
-  doc.text(`Vis : ${cd.screws} × ${s.screwType}  (${cd.joints} jonctions × ${s.screwsPerJoint})`, M, y); y += 9;
+  for (const p of cd.plans) { doc.text(`À acheter : ${p.bins.length} ${p.tass ? 'tasseau(x)' : 'planche(s)'} de ${fmt(s.stock)} cm, section ${fmt(p.t)} × ${fmt(p.d)} cm${p.tooLong.length ? `  (+${p.tooLong.length} pièce(s) trop longue(s))` : ''}`, M, y); y += 5.5; }
+  doc.text(`Vis : ${cd.screws} × ${s.screwType}  (${cd.joints} jonctions × ${s.screwsPerJoint})`, M, y); y += 5.5;
+  for (const b of cd.parts.buys) { doc.text(`${b.q} × ${b.txt}`, M, y); y += 5.5; }
+  y += 3.5;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(110);
   doc.text('REPÈRE', M, y); doc.text('QTÉ', M + 22, y); doc.text('LONGUEUR', M + 38, y); doc.text('ÉPAISSEUR × LARGEUR', M + 68, y); y += 2; doc.setTextColor(0);
   doc.setDrawColor(200); doc.line(M, y, M + 120, y); y += 5;
   doc.setFontSize(10);
   for (const g of cd.groups) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.setFont('helvetica', 'bold'); doc.text(g.letter, M + 2, y); doc.text(String(g.ids.length), M + 24, y); doc.text(fmt(g.L) + ' cm', M + 38, y); doc.setFont('helvetica', 'normal'); doc.text(`${fmt(g.t)} × ${fmt(g.d)}`, M + 68, y); y += 6; }
+  if (cd.parts.pieces.length) {
+    y += 4; if (y > PH - 30) { doc.addPage(); y = M + 4; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text('Portes, tiroirs, pieds, tasseaux, fonds', M, y); y += 6; doc.setFontSize(9);
+    for (const x of cd.parts.pieces) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.setFont('helvetica', 'bold'); doc.text(x.code, M + 2, y); doc.setFont('helvetica', 'normal'); doc.text(`${x.q} × ${fmt(x.L)} cm   (${fmt(x.w)} × ${fmt(x.t)})   ${x.name}`, M + 14, y); y += 5; }
+  }
   y += 4; if (y > PH - 30) { doc.addPage(); y = M + 4; }
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text('Pièces', M, y); y += 6; doc.setFontSize(9);
   const plist = D.boards.map(b => ({ b, ...binfo[b.id] })).sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
@@ -1570,7 +1947,7 @@ async function exportPdf() {
   const barW = PW - 2 * M;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
     if (y > PH - M - 14) { doc.addPage(); y = M + 4; }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(`Planche ${i + 1} · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm`, M, y); y += 2;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(`${p.tass ? 'Tasseau' : 'Planche'} ${i + 1} · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm`, M, y); y += 2;
     doc.setDrawColor(107, 74, 43); doc.setFillColor(238, 238, 238); doc.rect(M, y, barW, 9, 'FD');
     let x = M; doc.setFont('helvetica', 'bold');
     for (const pc of bn.pieces) { const w = pc.L / s.stock * barW; doc.setFillColor(224, 180, 124); doc.rect(x, y, w, 9, 'FD'); if (w > 12) doc.text(`${pc.letter} ${fmt(pc.L)}`, x + w / 2, y + 5.6, { align: 'center' }); else if (w > 3) doc.text(pc.letter, x + w / 2, y + 5.6, { align: 'center' }); x += w; }
@@ -1596,7 +1973,7 @@ function scheduleSave() {
   setStatus('enregistrement…'); clearTimeout(saveT);
   saveT = setTimeout(() => { const body = JSON.parse(JSON.stringify(D)); saving = saving.then(() => db.doc('meubles/' + D.id).set(body)).then(() => setStatus('✓ enregistré'), err => setStatus(err && err.code === 'quota_exceeded' ? 'stockage plein' : 'non synchronisé')); }, 1000);
 }
-function loadDesign(d) { selBook = null; selObj = null; selDim = null; selGuide = null; D = { ...newDesign(), ...d, books: d.books || [], dims: d.dims || {}, cdims: d.cdims || [], objs: d.objs || [], screws: d.screws || {}, settings: { ...DEF_SETTINGS, ...(d.settings || {}) } }; sel.clear(); loadHist(); $('#name').value = D.name; LS.set('atelier.last', D.id); renderPanel(); fitView(); updateEye(); }
+function loadDesign(d) { selPart = null; selBook = null; selObj = null; selDim = null; selGuide = null; D = { ...newDesign(), ...d, books: d.books || [], dims: d.dims || {}, cdims: d.cdims || [], objs: d.objs || [], screws: d.screws || {}, parts: d.parts || [], settings: { ...DEF_SETTINGS, ...(d.settings || {}) } }; sel.clear(); loadHist(); $('#name').value = D.name; LS.set('atelier.last', D.id); renderPanel(); fitView(); updateEye(); }
 async function listDesigns() {
   const local = Object.values(LS.get('atelier.designs') || {});
   if (!db) return local.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -1948,6 +2325,22 @@ function build3() {
     const m = new THREE.Mesh(geo, b.o === 'h' ? mats.h : mats.v); m.position.set(b.x + w / 2, b.y + h / 2, d / 2); m.castShadow = m.receiveShadow = true; m.userData.board = b; g.boards.add(m);
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), mats.edge); e.position.copy(m.position); g.boards.add(e);
   }
+  T3.pm = T3.pm || {};
+  for (const [x0, y0, z0, x1, y1, z1, col, shape, hinge] of partBoxes()) {
+    const w = x1 - x0, h = y1 - y0, d = z1 - z0, mat = col === 'w' ? (shape === 'tiroir' || w > h ? mats.h : mats.v) : (T3.pm[col] || (T3.pm[col] = new THREE.MeshStandardMaterial({ color: col, roughness: col === '#2a2a2a' ? .4 : .75, metalness: col === '#2a2a2a' ? .6 : 0 })));
+    let geo;
+    if (shape === 'cyl') geo = new THREE.CylinderGeometry(w / 2, w / 2, h, 24);
+    else if (shape === 'cone') geo = new THREE.CylinderGeometry(w / 2, w * .28, h, 24);
+    else if (shape === 'pin') geo = new THREE.CylinderGeometry(4, 4, h, 8);
+    else { geo = new THREE.BoxGeometry(w, h, d); if (col === 'w') { const uv = geo.attributes.uv; const L_ = Math.max(w, h); for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (L_ / 600), uv.getY(i) * .5); } }
+    const m = new THREE.Mesh(geo, mat); m.position.set(x0 + w / 2, y0 + h / 2, z0 + d / 2); m.castShadow = m.receiveShadow = true; g.boards.add(m);
+    if (shape === 'box' || shape === 'porte' || shape === 'tiroir') { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), mats.edge); e.position.copy(m.position); g.boards.add(e); }
+    if (shape === 'porte' || shape === 'tiroir') { // poignée
+      const hm = T3.pm.handle || (T3.pm.handle = new THREE.MeshStandardMaterial({ color: 0x3d2a17, roughness: .5, metalness: .3 })), vert = shape === 'porte';
+      const hg = new THREE.BoxGeometry(vert ? 10 : Math.min(140, w * .3), vert ? Math.min(140, h * .3) : 10, 14), hmesh = new THREE.Mesh(hg, hm);
+      hmesh.position.set(vert ? (hinge === 'd' ? x0 + Math.min(40, w * .15) : x1 - Math.min(40, w * .15)) : x0 + w / 2, vert ? y0 + h / 2 : y1 - Math.min(h * .35, 50), z1 + 7); g.boards.add(hmesh);
+    }
+  }
   if (vis('showBooks')) for (const k of D.books) {
     const f = BOOKS[k.f] || BOOKS.roman, n = bookCount(k), sh = shelfUnder(k), dd = sh ? depth(sh) : S().d, z1 = Math.max(dd, f.p);
     for (let i = 0; i < n; i++) {
@@ -1962,10 +2355,11 @@ function build3() {
     s.scale.set(w, o.h, 1); s.position.set(o.x, o.y + o.h / 2, (sh ? S().d : maxD) / 2); g.deco.add(s);
   }
   // sol et mur pour l'ombre
+  const xb = partsExtent(bb), backE = Math.max(0, ...parts('dos').map(p => p.mat === 'pin' ? S().t : (p.ep || 5)));
   const span = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) * 4 + 4000;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor); floor.rotation.x = -Math.PI / 2; floor.position.set((bb.x0 + bb.x1) / 2, bb.y0 - .5, 0); floor.receiveShadow = true; g.env.add(floor);
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.wall); wall.position.set((bb.x0 + bb.x1) / 2, bb.y0 + span / 2 - 1, -1.5); wall.receiveShadow = true; wall.userData.wall = true; g.env.add(wall);
-  const eb = { ...bb }; if (vis('showObjs')) for (const o of D.objs) { eb.y1 = Math.max(eb.y1, o.y + o.h); eb.x0 = Math.min(eb.x0, o.x - objW(o) / 2); eb.x1 = Math.max(eb.x1, o.x + objW(o) / 2); }
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor); floor.rotation.x = -Math.PI / 2; floor.position.set((bb.x0 + bb.x1) / 2, xb.y0 - .5, 0); floor.receiveShadow = true; g.env.add(floor);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.wall); wall.position.set((bb.x0 + bb.x1) / 2, xb.y0 + span / 2 - 1, -1.5 - backE); wall.receiveShadow = true; wall.userData.wall = true; g.env.add(wall);
+  const eb = { ...xb }; if (vis('showObjs')) for (const o of D.objs) { eb.y1 = Math.max(eb.y1, o.y + o.h); eb.x0 = Math.min(eb.x0, o.x - objW(o) / 2); eb.x1 = Math.max(eb.x1, o.x + objW(o) / 2); }
   const c = [(eb.x0 + eb.x1) / 2, (eb.y0 + eb.y1) / 2, maxD / 2], size = Math.max(eb.x1 - eb.x0, eb.y1 - eb.y0, maxD);
   V3.center = c; V3.size = size; if (!V3.target) V3.target = new THREE.Vector3(...c);
   const sun = T3.sun; sun.position.set(c[0] - size * .8, c[1] + size * 1.6, c[2] + size * 1.4); sun.target.position.set(...c);
@@ -2030,6 +2424,22 @@ function tap3([x, y]) {
   if (hb.length) { const b = hb[0].object.userData.board, I = boardInfo()[b.id]; toast(`${I.code} ${I.name} · ${fmt(b.L)} cm`); }
   if (V3.sel) { V3.sel = null; buildScrews3(); panel3(); }
 }
+// Volumes des éléments de construction pour la 3D et la RA : [x0, y0, z0, x1, y1, z1, matière, forme]
+function partBoxes() {
+  const out = [], t = S().t;
+  for (const p of parts('dos')) { const o = outerRect(p.a), e = p.mat === 'pin' ? t : (p.ep || 5); out.push([o.x0, o.y0, -e, o.x1, o.y1, 0, p.mat === 'pin' ? 'w' : '#cfb489']); }
+  for (const p of parts('tasseau')) { const g = cleatGeom(p); out.push([g.x0, g.y0, 0, g.x1, g.y1, g.L, '#c99a62']); }
+  for (const p of parts('pied')) {
+    const g = legGeom(p), d = depth(byId(p.b)), zs = p.pair === false ? [d / 2] : [d - p.ins - g.w / 2, p.ins + g.w / 2], col = p.src === 'pin' ? 'w' : p.shape === 'epingle' ? '#2a2a2a' : '#c8955a';
+    const shape = p.src === 'pin' ? 'box' : p.shape === 'rond' ? 'cyl' : p.shape === 'compas' ? 'cone' : p.shape === 'epingle' ? 'pin' : 'box';
+    for (const z of zs) out.push([g.cx - g.w / 2, g.bot, z - g.w / 2, g.cx + g.w / 2, g.top, z + g.w / 2, col, shape]);
+  }
+  if (vis('showFronts')) for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) {
+    const d = depth(byId(p.a.b)), z0 = p.mount === 'enc' ? d - t : d;
+    for (const f of fronts(p)) out.push([f.x0, f.y0, z0, f.x1, f.y1, z0 + t, 'w', p.k, f.hinge]);
+  }
+  return out;
+}
 // ---------- Réalité augmentée : le meuble part vers la page « chez moi » dans le lien lui-même ----------
 const AR_DEFAULT = 'https://solaltoumayan.github.io/atelier-ar/';
 const arBase = () => { try { return localStorage.getItem('atelier.arBase') || AR_DEFAULT; } catch { return AR_DEFAULT; } };
@@ -2037,6 +2447,7 @@ async function arPayload() {
   const r1 = v => Math.round(v * 10) / 10, M = { n: D.name, b: D.boards.map(b => [r1(b.x), r1(b.y), r1(bw(b)), r1(bh(b)), r1(depth(b)), b.o]), k: [], o: [] };
   if (vis('showBooks')) for (const k of D.books) { const f = BOOKS[k.f] || BOOKS.roman, n = bookCount(k), sh = shelfUnder(k), dd = sh ? depth(sh) : S().d, z1 = Math.max(dd, f.p); for (let i = 0; i < n; i++) { const hh = k.h * (1 - f.v * rng(k.seed, i)); M.k.push([r1(k.x + i * k.e), r1(k.y), r1(k.e - .6), r1(hh), r1(z1 - f.p), r1(z1), f.manga ? '#f7f5ef' : f.pal[Math.floor(rng(k.seed + 7, i) * f.pal.length)]]); } }
   if (vis('showObjs')) for (const o of D.objs) M.o.push([o.t, r1(o.x), r1(o.y), r1(o.h), r1(S().d / 2)]);
+  M.p = partBoxes().map(q => [...q.slice(0, 6).map(r1), q[6], q[7] || 'box']);
   const z = await new Response(new Blob([JSON.stringify(M)]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
   let bin = ''; new Uint8Array(z).forEach(c => bin += String.fromCharCode(c)); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -2075,8 +2486,8 @@ $('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').cl
 
 // ---------- Boutons ----------
 $('#bUndo').onclick = undo; $('#bRedo').onclick = redo; $('#bFit').onclick = fitView;
-$('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
-const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre']];
+$('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
+const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs']];
 function updateEye() { $('#eyeDot').style.display = EYE.some(([k]) => !vis(k)) ? 'block' : 'none'; if ($('#eyeMenu').style.display === 'block') renderEye(); }
 function renderEye() {
   const m = $('#eyeMenu');
@@ -2094,6 +2505,7 @@ $('#bEye').onclick = e => {
   renderEye(); m.style.display = 'block'; const r = $('#bEye').getBoundingClientRect();
   m.style.top = (r.bottom + 6) + 'px'; m.style.left = Math.max(8, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 8)) + 'px';
 };
+document.addEventListener('pointerdown', e => { const bm = $('#buildMenu'); if (bm.style.display === 'grid' && !e.target.closest('#buildMenu') && !e.target.closest('#bBuild')) bm.style.display = 'none'; }, true);
 document.addEventListener('pointerdown', e => { const m = $('#eyeMenu'); if (m.style.display === 'block' && !e.target.closest('#eyeMenu') && !e.target.closest('#bEye')) m.style.display = 'none'; }, true);
 $('#name').onchange = () => { D.name = $('#name').value.trim() || 'Sans nom'; scheduleSave(); };
 

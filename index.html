@@ -137,9 +137,18 @@ function build(M) {
   // tout en mètres, bas du meuble au niveau 0, centré en largeur ; le dos du meuble est à z = 0 (côté mur)
   const S = .001, scene = new THREE.Scene(); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (const [x, y, w, h] of M.b) { x0 = Math.min(x0, x); x1 = Math.max(x1, x + w); y0 = Math.min(y0, y); y1 = Math.max(y1, y + h); }
+  for (const [px0, py0, , px1, py1] of M.p || []) { x0 = Math.min(x0, px0); x1 = Math.max(x1, px1); y0 = Math.min(y0, py0); y1 = Math.max(y1, py1); }
   const cx = (x0 + x1) / 2, P = (x, y, z) => [(x - cx) * S, (y - y0) * S, z * S];
   const wood = { h: new THREE.MeshStandardMaterial({ map: woodTex(false), roughness: .8 }), v: new THREE.MeshStandardMaterial({ map: woodTex(true), roughness: .8 }) };
   for (const [x, y, w, h, d, o] of M.b) { const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, h * S, d * S), o === 'v' ? wood.v : wood.h); m.position.set(...P(x + w / 2, y + h / 2, d / 2)); scene.add(m); }
+  // portes, tiroirs, pieds, tasseaux, fonds : [x0, y0, z0, x1, y1, z1, matière ('w' = pin ou couleur), forme]
+  const pm = {};
+  for (const [px0, py0, pz0, px1, py1, pz1, col, shape] of M.p || []) {
+    const w = px1 - px0, h = py1 - py0, d = pz1 - pz0, mat = col === 'w' ? (w > h ? wood.h : wood.v) : (pm[col] || (pm[col] = new THREE.MeshStandardMaterial({ color: col, roughness: .7, metalness: col === '#2a2a2a' ? .6 : 0 })));
+    const geo = shape === 'cyl' ? new THREE.CylinderGeometry(w / 2 * S, w / 2 * S, h * S, 24) : shape === 'cone' ? new THREE.CylinderGeometry(w / 2 * S, w * .28 * S, h * S, 24) : shape === 'pin' ? new THREE.CylinderGeometry(.004, .004, h * S, 8) : new THREE.BoxGeometry(w * S, h * S, d * S);
+    const m = new THREE.Mesh(geo, mat); m.position.set(...P(px0 + w / 2, py0 + h / 2, pz0 + d / 2)); scene.add(m);
+    if (shape === 'porte' || shape === 'tiroir') { const hm = pm.h || (pm.h = new THREE.MeshStandardMaterial({ color: '#3d2a17', roughness: .5 })), v = shape === 'porte', hb = new THREE.Mesh(new THREE.BoxGeometry((v ? 10 : Math.min(140, w * .3)) * S, (v ? Math.min(140, h * .3) : 10) * S, 14 * S), hm); hb.position.set(...P(px0 + w / 2, v ? py0 + h / 2 : py1 - Math.min(h * .35, 50), pz1 + 7)); scene.add(hb); }
+  }
   const bm = {}; for (const [x, y, w, h, z0, z1, col] of M.k || []) { const mat = bm[col] || (bm[col] = new THREE.MeshStandardMaterial({ color: col, roughness: .85 })); const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, h * S, (z1 - z0) * S), mat); m.position.set(...P(x + w / 2, y + h / 2, (z0 + z1) / 2)); scene.add(m); }
   for (const [t, x, y, h, z] of M.o || []) {
     if (!OBJS[t]) continue; const w = h * OBJS[t].r, c = document.createElement('canvas'); c.height = 512; c.width = Math.round(512 * OBJS[t].r); paintObj(c.getContext('2d'), t, 0, 0, c.width, c.height);
