@@ -164,7 +164,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 10);
 const DEF_SETTINGS = { t: 18, d: 200, stock: 2000, assembly: 'top', screwsPerJoint: 2, screwType: '4 × 40 mm', showGaps: true };
-function newDesign() { return { id: uid(), name: 'Nouveau meuble', boards: [], guides: [], books: [], objs: [], dims: {}, cdims: [], screws: {}, parts: [], settings: { ...DEF_SETTINGS }, updatedAt: Date.now() }; }
+function newDesign() { return { id: uid(), name: 'Nouveau meuble', boards: [], guides: [], books: [], objs: [], dims: {}, cdims: [], screws: {}, brackets: {}, parts: [], settings: { ...DEF_SETTINGS }, updatedAt: Date.now() }; }
 let D = newDesign();
 let sel = new Set();
 let tool = 'sel';
@@ -184,12 +184,12 @@ function parseCm(str) {
   if (!/^[0-9.+\-*/()]+$/.test(s)) return NaN;
   try { const v = Function('"use strict";return(' + s + ')')(); return Number.isFinite(v) ? Math.round(v * 10) : NaN; } catch { return NaN; }
 }
-function snapshot() { return JSON.stringify({ boards: D.boards, guides: D.guides, books: D.books, dims: D.dims, cdims: D.cdims, objs: D.objs, screws: D.screws, parts: D.parts || [], settings: D.settings }); }
+function snapshot() { return JSON.stringify({ boards: D.boards, guides: D.guides, books: D.books, dims: D.dims, cdims: D.cdims, objs: D.objs, screws: D.screws, brackets: D.brackets || {}, parts: D.parts || [], settings: D.settings }); }
 const HMAX = 300; let histT = null;
 function saveHist() { clearTimeout(histT); const id = D.id; histT = setTimeout(() => { for (const n of [120, 60, 25]) { try { localStorage.setItem('atelier.hist.' + id, JSON.stringify({ u: undoS.slice(-n), r: redoS.slice(-n) })); return; } catch { } } }, 400); }
 function loadHist() { undoS.length = redoS.length = 0; try { const h = JSON.parse(localStorage.getItem('atelier.hist.' + D.id)); if (h) { undoS.push(...(h.u || [])); redoS.push(...(h.r || [])); } } catch { } }
 function pushUndo(pre) { const snap = pre ?? snapshot(); if (undoS[undoS.length - 1] === snap) return; undoS.push(snap); if (undoS.length > HMAX) undoS.shift(); redoS.length = 0; saveHist(); }
-function restore(json) { const o = JSON.parse(json); D.boards = o.boards; D.guides = o.guides; D.books = o.books || []; D.dims = o.dims || {}; D.cdims = o.cdims || []; D.objs = o.objs || []; D.screws = o.screws || {}; D.parts = o.parts || []; if (selPart) selPart = D.parts.find(x => x.id === selPart.id) || null; if (selObj) selObj = D.objs.find(x => x.id === selObj.id) || null; if (o.settings) D.settings = { ...o.settings, showGaps: D.settings.showGaps, showBooks: D.settings.showBooks, showGuides: D.settings.showGuides, showCross: D.settings.showCross, showObjs: D.settings.showObjs, showNames: D.settings.showNames, showFronts: D.settings.showFronts }; if (selGuide) selGuide = D.guides.find(g => g.id === selGuide.id) || null; sel = new Set([...sel].filter(id => byId(id))); if (selBook && !D.books.find(k => k.id === selBook.id)) selBook = null; else if (selBook) selBook = D.books.find(k => k.id === selBook.id); }
+function restore(json) { const o = JSON.parse(json); D.boards = o.boards; D.guides = o.guides; D.books = o.books || []; D.dims = o.dims || {}; D.cdims = o.cdims || []; D.objs = o.objs || []; D.screws = o.screws || {}; D.brackets = o.brackets || {}; D.parts = o.parts || []; if (selPart) selPart = D.parts.find(x => x.id === selPart.id) || null; if (selObj) selObj = D.objs.find(x => x.id === selObj.id) || null; if (o.settings) D.settings = { ...o.settings, showGaps: D.settings.showGaps, showBooks: D.settings.showBooks, showGuides: D.settings.showGuides, showCross: D.settings.showCross, showObjs: D.settings.showObjs, showNames: D.settings.showNames, showFronts: D.settings.showFronts, showScrews: D.settings.showScrews }; if (selGuide) selGuide = D.guides.find(g => g.id === selGuide.id) || null; sel = new Set([...sel].filter(id => byId(id))); if (selBook && !D.books.find(k => k.id === selBook.id)) selBook = null; else if (selBook) selBook = D.books.find(k => k.id === selBook.id); }
 function undo() { if (!undoS.length) return toast('Rien à annuler'); redoS.push(snapshot()); restore(undoS.pop()); selDim = null; saveHist(); changed(); toast(`↶ Annulé · encore ${undoS.length} retour${undoS.length > 1 ? 's' : ''} possible${undoS.length > 1 ? 's' : ''}`); }
 function redo() { if (!redoS.length) return toast('Rien à rétablir'); undoS.push(snapshot()); restore(redoS.pop()); selDim = null; saveHist(); changed(); toast('↷ Rétabli'); }
 
@@ -572,13 +572,13 @@ function objPointerDown(base, sx, sy, wx, wy, touch) {
 const PT = { door: 'porte', drawer: 'tiroir', leg: 'pied', cleat: 'tasseau', back: 'dos' };
 const BUILD = [
   ['h', '━', 'Planche horizontale'], ['v', '┃', 'Planche verticale'], ['rect', '▭', 'Caisson'],
-  ['door', '🚪', 'Porte'], ['drawer', '🗄', 'Tiroirs'], ['leg', '🦵', 'Pieds'], ['cleat', '▪', 'Tasseaux'], ['back', '▦', 'Fond / dos'],
+  ['door', '🚪', 'Porte'], ['drawer', '🗄', 'Tiroirs'], ['leg', '🦵', 'Pieds'], ['cleat', '▪', 'Tasseaux'], ['back', '▦', 'Fond / dos'], ['joint', '🔩', 'Vis & équerres'],
 ];
 // tailles courantes du commerce (hauteurs en cm) et largeur / diamètre typique (mm) ; en pin : planches de 18 collées
 const LEG_STD = { droit: { h: [10, 12, 15, 20], w: 30 }, rond: { h: [10, 15, 20], w: 40 }, carre: { h: [15, 25, 30, 40], w: 25 }, compas: { h: [15, 20, 25, 30], w: 60 }, epingle: { h: [10, 15, 20, 25, 30, 40, 72], w: 100 }, pin: { h: [10, 15, 20], w: 36 } };
 const LEG_SHAPES = { droit: 'Droit', compas: 'Compas', rond: 'Rond', carre: 'Carré', epingle: 'Épingle' };
-const PART_N = { porte: 'Porte', tiroir: 'Tiroirs', pied: 'Pied', tasseau: 'Tasseau', dos: 'Fond' };
-const PART_I = { porte: '🚪', tiroir: '🗄', pied: '🦵', tasseau: '▪', dos: '▦' };
+const PART_N = { joint: 'Vis & équerres', porte: 'Porte', tiroir: 'Tiroirs', pied: 'Pied', tasseau: 'Tasseau', dos: 'Fond' };
+const PART_I = { joint: '🔩', porte: '🚪', tiroir: '🗄', pied: '🦵', tasseau: '▪', dos: '▦' };
 let selPart = null;
 const SLIDES = [600, 550, 500, 450, 400, 350, 300, 250];
 
@@ -679,9 +679,243 @@ function partsCut() {
   }
   // regroupe les pièces identiques
   const m = new Map(); for (const x of pieces) { const k = [x.code, x.name, x.L, x.w, x.t].join('|'); if (m.has(k)) m.get(k).q += x.q; else m.set(k, { ...x }); }
+  for (const b of bracketBuys()) buys.push(b);
   return { pieces: [...m.values()], buys };
 }
 const legTotal = () => { const ls = parts('pied'); return ls.length ? Math.max(...ls.map(p => p.h)) : 0; };
+
+// ---------- Ma visseuse : est-ce qu'elle passe ? ----------
+// Pour visser, il faut la place de la visseuse + l'embout qui dépasse + la vis (posée sur sa pointe avant de visser).
+const DRILLS = {
+  ddf482: { n: 'Makita DDF482', L: 185 }, ddf453: { n: 'Makita DDF453', L: 214 }, dhp453: { n: 'Makita DHP453 (percussion)', L: 239 }, autre: { n: 'Autre visseuse', L: 200 },
+};
+const TOOLS_DEF = { drill: 'ddf482', L: 185, bit: 30, angle: false };
+const tools = () => ({ ...TOOLS_DEF, ...(LS.get('atelier.tools') || {}) });
+const CHUCK_R = 22; // demi-largeur du nez de la visseuse (mandrin)
+const screwLen = s => { const m = String(s || '').replace(',', '.').match(/[×x*]\s*(\d+(?:\.\d+)?)/i); return m ? +m[1] : 40; };
+// Équerres : tailles courantes (aile en mm), nombre de trous, vis
+const BRACKETS = [20, 30, 40, 50, 60, 80];
+const brHoles = a => a <= 20 ? 2 : a <= 50 ? 4 : 6;
+const BR_SCREW = '3,5 × 16 mm';
+const brOf = j => { const b = D.brackets && D.brackets[j.key]; return b && b.n > 0 ? b : null; };
+
+// distance libre depuis un point, dans une direction, en ignorant certaines planches
+function freeRay(x, y, dir, half, skip) {
+  let best = Infinity, who = null;
+  for (const b of D.boards) {
+    if (skip.includes(b.id)) continue; const r = rect(b);
+    if (dir[0] === 'x') { if (r.y1 <= y - half || r.y0 >= y + half) continue; const d = dir[1] === '+' ? r.x0 - x : x - r.x1; if (d > -.5 && d < best) { best = Math.max(0, d); who = b; } }
+    else { if (r.x1 <= x - half || r.x0 >= x + half) continue; const d = dir[1] === '+' ? r.y0 - y : y - r.y1; if (d > -.5 && d < best) { best = Math.max(0, d); who = b; } }
+  }
+  return { free: best, by: who };
+}
+// géométrie d'une jonction : A = planche dont le chant reçoit les vis, B = planche traversée
+function jGeo(j) {
+  const a = rect(j.A), b = rect(j.B), f = j.face;
+  if (f === 'top' || f === 'bottom') { // A verticale, B au-dessus (top) ou en dessous (bottom)
+    const up = f === 'top', cy = up ? b.y0 : b.y1;
+    return { axis: 'y', drill: up ? 'y+' : 'y-', ox: (a.x0 + a.x1) / 2, oy: up ? b.y1 : b.y0, cy, cx: (a.x0 + a.x1) / 2,
+      corners: { '-': [a.x0, cy], '+': [a.x1, cy] }, inward: up ? -1 : 1 };
+  }
+  const rt = f === 'right', cx = rt ? b.x0 : b.x1; // A horizontale, B à droite (right) ou à gauche (left)
+  return { axis: 'x', drill: rt ? 'x+' : 'x-', ox: rt ? b.x1 : b.x0, oy: (a.y0 + a.y1) / 2, cx, cy: (a.y0 + a.y1) / 2,
+    corners: { '-': [cx, a.y0], '+': [cx, a.y1] }, inward: rt ? -1 : 1 };
+}
+// vis de la jonction : la visseuse arrive par l'extérieur de B
+function screwCheck(j) {
+  const T = tools(), need = T.L + T.bit + screwLen(S().screwType), g = jGeo(j);
+  const r = freeRay(g.ox, g.oy, g.drill, CHUCK_R, [j.A.id, j.B.id]);
+  return angleOk({ ok: r.free >= need, free: r.free, need, by: r.by }, screwLen(S().screwType));
+}
+const ANGLE_HEAD = 75; // un renvoi d'angle compact demande environ 7,5 cm + l'embout + la vis
+function angleOk(r, sl) { if (!r.ok && tools().angle && r.free >= ANGLE_HEAD + tools().bit + sl) { r.ok = true; r.angle = true; } return r; }
+// côté « intérieur » d'une équerre par défaut : là où il y a une case fermée
+function brSide(j) {
+  const b = brOf(j); if (b && b.s) return b.s;
+  const g = jGeo(j), probe = s => { const [x, y] = g.corners[s], dir = g.axis === 'y' ? (s === '+' ? 'x+' : 'x-') : (s === '+' ? 'y+' : 'y-'); return freeRay(x, y, dir, 10, [j.A.id, j.B.id]).free; };
+  const m = probe('-'), p = probe('+'); if (Number.isFinite(m) && !Number.isFinite(p)) return '-'; if (Number.isFinite(p) && !Number.isFinite(m)) return '+';
+  return g.axis === 'x' ? '-' : (m <= p ? '-' : '+'); // étagère : dessous ; montant : côté le plus petit
+}
+// équerre : vis dans B (visseuse dans la case, face à B) et vis dans A (visseuse dans la case, face à A)
+function brCheck(j) {
+  const b = brOf(j); if (!b) return null;
+  const T = tools(), need = T.L + T.bit + screwLen(BR_SCREW), g = jGeo(j), s = brSide(j), [x, y] = g.corners[s], a = b.a || 40, sg = s === '+' ? 1 : -1, skip = [j.A.id, j.B.id];
+  let r1, r2;
+  if (g.axis === 'y') { // aile sur B (horizontale) : visser vers B depuis la case ; aile sur A (verticale) : visser vers A
+    r1 = freeRay(x + sg * a / 2, y, g.inward < 0 ? 'y-' : 'y+', CHUCK_R, skip);
+    r2 = freeRay(x, y + g.inward * a / 2, sg > 0 ? 'x+' : 'x-', CHUCK_R, skip);
+  } else {
+    r1 = freeRay(x, y + sg * a / 2, g.inward < 0 ? 'x-' : 'x+', CHUCK_R, skip);
+    r2 = freeRay(x + g.inward * a / 2, y, sg > 0 ? 'y+' : 'y-', CHUCK_R, skip);
+  }
+  const w = r1.free < r2.free ? r1 : r2;
+  return angleOk({ ok: w.free >= need, free: w.free, need, by: w.by }, screwLen(BR_SCREW));
+}
+function drillIssues() {
+  const out = [];
+  for (const j of jointList()) {
+    if (screwsOf(j) > 0) { const c = screwCheck(j); if (!c.ok) out.push({ j, kind: 'vis', ...c }); }
+    const c2 = brCheck(j); if (c2 && !c2.ok) out.push({ j, kind: 'équerre', ...c2 });
+  }
+  return out;
+}
+const fromTxt = j => ({ top: 'le dessus', bottom: 'le dessous', right: 'la droite', left: 'la gauche' }[j.face]);
+function issueTxt(x, I) {
+  const by = x.by ? `<span class="tag">${I[x.by.id].code}</span> ${esc(I[x.by.id].name)}` : '';
+  return `<b><span class="tag">${I[x.j.B.id].code}</span> → <span class="tag">${I[x.j.A.id].code}</span></b> ${x.kind === 'vis' ? `vis depuis ${fromTxt(x.j)}` : 'vis de l\'équerre'} : il faut <b>${fmt(x.need)} cm</b>, il n'y a que <b style="color:#b42318">${fmt(x.free)} cm</b>${by ? ` (bloqué par ${by})` : ''}.<br><span style="color:var(--mute)">→ Visse ${x.kind === 'vis' ? 'cette jonction' : 'cette équerre'} avant de poser ${by || 'la planche qui gêne'}${tools().angle ? '' : ', ou utilise un renvoi d\'angle'}${x.kind === 'vis' ? ', ou passe en équerre' : ''}.</span>`;
+}
+function bracketBuys() {
+  const m = new Map(); let screws = 0;
+  for (const j of jointList()) { const b = brOf(j); if (!b) continue; const a = b.a || 40; m.set(a, (m.get(a) || 0) + b.n); screws += b.n * brHoles(a); }
+  const out = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([a, q]) => ({ txt: `Équerre ${a} × ${a} mm`, q }));
+  if (screws) out.push({ txt: `Vis ${BR_SCREW} (pour les équerres)`, q: screws });
+  return out;
+}
+
+// ---------- Dessin : équerres, têtes de vis et alertes ----------
+function drawJoints() {
+  if (!vis('showScrews')) return;
+  const jt = tool === 'joint', J = jointList();
+  for (const j of J) {
+    const b = brOf(j), on = selJoint === j.key;
+    if (b) { // petite équerre en L dans le coin
+      const g = jGeo(j), s = brSide(j), [x, y] = g.corners[s], a = b.a || 40, sg = s === '+' ? 1 : -1, bad = brCheck(j) && !brCheck(j).ok;
+      const [px, py] = toS(x, y), L = a * Vw.s, th = Math.max(2.5, 3 * Vw.s);
+      let ex, ey, fx, fy; // aile le long de B, aile le long de A
+      if (g.axis === 'y') { ex = px + sg * L; ey = py; fx = px; fy = py - g.inward * L; } else { ex = px; ey = py - sg * L; fx = px + g.inward * L; fy = py; }
+      cx.strokeStyle = bad ? '#d92d20' : on ? '#d9480f' : '#4a4a4a'; cx.lineWidth = th; cx.lineCap = 'square'; cx.beginPath(); cx.moveTo(ex, ey); cx.lineTo(px, py); cx.lineTo(fx, fy); cx.stroke(); cx.lineCap = 'butt';
+      if (b.n > 1 && L > 14) { cx.font = '800 10px -apple-system,Segoe UI,sans-serif'; cx.fillStyle = '#4a4a4a'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('×' + b.n, (ex + fx) / 2 + (ex - px) * .15 + (fx - px) * .15, (ey + fy) / 2 + (ey - py) * .15 + (fy - py) * .15); }
+    }
+    const n = screwsOf(j); if (!n) continue;
+    const c = screwCheck(j), g = jGeo(j), [sx, sy] = toS(g.ox, g.oy);
+    if (jt || on) { cx.fillStyle = c.ok ? '#2f9e44' : '#d92d20'; cx.strokeStyle = '#fff'; cx.lineWidth = 1.5; cx.beginPath(); cx.arc(sx, sy, on ? 7 : 5, 0, 7); cx.fill(); cx.stroke(); if (on) { cx.strokeStyle = '#d9480f'; cx.lineWidth = 2; cx.beginPath(); cx.arc(sx, sy, 11, 0, 7); cx.stroke(); } }
+    else if (!c.ok) { cx.fillStyle = '#d92d20'; cx.beginPath(); cx.arc(sx, sy, 8, 0, 7); cx.fill(); cx.fillStyle = '#fff'; cx.font = '900 11px -apple-system,Segoe UI,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('!', sx, sy + .5); }
+  }
+}
+let selJoint = null;
+function jointAt(wx, wy) { // la jonction la plus proche du doigt (et le côté touché pour une équerre)
+  let best = null, bd = 34 / Vw.s;
+  for (const j of jointList()) {
+    const g = jGeo(j), a = rect(j.A), d = g.axis === 'y' ? Math.hypot(clamp(wx, a.x0, a.x1) - wx, g.cy - wy) : Math.hypot(g.cx - wx, clamp(wy, a.y0, a.y1) - wy);
+    if (d < bd) { bd = d; best = { j, s: g.axis === 'y' ? (wx < (a.x0 + a.x1) / 2 ? '-' : '+') : (wy < (a.y0 + a.y1) / 2 ? '-' : '+') }; }
+  }
+  return best;
+}
+function jointTap(wx, wy) {
+  const h = jointAt(wx, wy); if (!h) { selJoint = null; changed(false); return toast('Touche près d\'un assemblage (bout de planche contre une autre)'); }
+  selJoint = h.j.key; selJointSide = h.s; panelOn = true; changed(false);
+}
+let selJointSide = null;
+// éditeur d'une jonction (2D et 3D)
+function jointEditor(box, j, after) {
+  const I = boardInfo(), n = screwsOf(j), custom = D.screws && D.screws[j.key] != null, b = brOf(j), c = screwCheck(j), bc = brCheck(j), T = tools();
+  const okTxt = (r, what) => r.ok && r.angle ? `<span style="color:#b26a00;font-weight:700">✓ Ça passe avec le renvoi d'angle</span> <span style="color:var(--mute)">(${fmt(r.free)} cm de libre)</span>` : r.ok ? `<span style="color:#2f9e44;font-weight:700">✓ La visseuse passe</span> <span style="color:var(--mute)">(${Number.isFinite(r.free) ? fmt(r.free) + ' cm de libre' : 'côté extérieur'}, il faut ${fmt(r.need)} cm)</span>` : `<span style="color:#b42318;font-weight:700">✗ La visseuse ne passe pas</span> ${what}`;
+  box.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><b style="flex:1;font-size:14px">🔩 <span class="tag">${I[j.B.id].code}</span> ${esc(I[j.B.id].name)} → <span class="tag">${I[j.A.id].code}</span> ${esc(I[j.A.id].name)}</b><button class="btn" id="jx">✕</button></div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 2px">Vis apparentes · depuis ${fromTxt(j)}</div>
+    <div class="row" style="align-items:center;margin-top:2px"><button class="btn" id="jm" style="font-size:22px;width:48px;justify-content:center">−</button><span class="big" style="min-width:70px;text-align:center">${n} vis</span><button class="btn" id="jp" style="font-size:22px;width:48px;justify-content:center">+</button>${custom ? `<button class="btn" id="jr">↺ ${S().screwsPerJoint} par défaut</button>` : ''}</div>
+    ${n ? `<div style="font-size:12px;margin-top:4px;line-height:1.45">${okTxt(c, `: il faut ${fmt(c.need)} cm (visseuse ${fmt(T.L)} + embout ${fmt(T.bit)} + vis ${fmt(screwLen(S().screwType))}), il n'y a que ${fmt(c.free)} cm${c.by ? ` à cause de <span class="tag">${I[c.by.id].code}</span>` : ''}. Visse avant de poser ${c.by ? I[c.by.id].code : 'cette planche'}.`)}</div>` : ''}
+    <div style="font-size:12px;font-weight:700;margin:10px 0 2px">Équerres</div>
+    <div class="row" style="align-items:center;margin-top:2px"><button class="btn" id="bm" style="font-size:22px;width:48px;justify-content:center">−</button><span class="big" style="min-width:70px;text-align:center">${b ? b.n : 0}</span><button class="btn" id="bp" style="font-size:22px;width:48px;justify-content:center">+</button></div>
+    ${b ? `<div class="seg" style="flex-wrap:wrap;margin-top:6px">${BRACKETS.map(a => `<button data-ba="${a}" class="${(b.a || 40) === a ? 'on' : ''}">${a} mm</button>`).join('')}</div>
+      <div class="seg" style="margin-top:6px">${(jGeo(j).axis === 'y' ? [['-', '◧ À gauche'], ['+', 'À droite ◨']] : [['-', '▁ Dessous'], ['+', '▔ Dessus']]).map(([v, l]) => `<button data-bs="${v}" class="${brSide(j) === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div style="font-size:12px;margin-top:4px;line-height:1.45">${brHoles(b.a || 40)} vis ${BR_SCREW} par équerre · ${okTxt(bc, `: il faut ${fmt(bc.need)} cm, il n'y a que ${fmt(bc.free)} cm. Pose l'équerre avant de fermer la case, ou prends une équerre plus grande.`)}</div>` : ''}
+    <div class="row"><button class="btn" id="jAll">Ces réglages partout</button></div>`;
+  const save = () => { scheduleSave(); after(); };
+  const setS = v => { pushUndo(); D.screws = D.screws || {}; if (v == null) delete D.screws[j.key]; else D.screws[j.key] = clamp(v, 0, 12); save(); };
+  const setB = fn => { pushUndo(); D.brackets = D.brackets || {}; const cur = D.brackets[j.key] || { n: 0, a: lastBr() }; fn(cur); if (cur.n > 0) D.brackets[j.key] = cur; else delete D.brackets[j.key]; save(); };
+  box.querySelector('#jm').onclick = () => setS(n - 1); box.querySelector('#jp').onclick = () => setS(n + 1); if (box.querySelector('#jr')) box.querySelector('#jr').onclick = () => setS(null);
+  box.querySelector('#bm').onclick = () => setB(o => o.n = Math.max(0, o.n - 1));
+  box.querySelector('#bp').onclick = () => setB(o => { o.n = Math.min(8, o.n + 1); if (!o.s && selJointSide && o.n === 1) o.s = selJointSide; });
+  box.querySelectorAll('[data-ba]').forEach(x => x.onclick = () => setB(o => o.a = +x.dataset.ba));
+  box.querySelectorAll('[data-bs]').forEach(x => x.onclick = () => setB(o => o.s = x.dataset.bs));
+  box.querySelector('#jAll').onclick = () => { pushUndo(); D.screws = D.screws || {}; D.brackets = D.brackets || {}; for (const k of jointList()) { D.screws[k.key] = n; if (b) D.brackets[k.key] = { n: b.n, a: b.a || 40 }; else delete D.brackets[k.key]; } save(); toast(`${n} vis${b ? ` + ${b.n} équerre(s)` : ''} sur toutes les jonctions`); };
+  box.querySelector('#jx').onclick = () => { selJoint = null; if (V3.sel === j.key) V3.sel = null; after(true); };
+}
+const lastBr = () => { const v = Object.values(D.brackets || {}).pop(); return v && v.a || 40; };
+function jointPanel(j) { const P = $('#panel'); P.style.display = 'block'; jointEditor(P, j, close => { if (close) selJoint = null; changed(false); }); }
+function toolsDialog() {
+  const T = tools();
+  openModal(`<h2>Ma visseuse<button class="btn" data-close>✕</button></h2>
+    <label class="f">Modèle<select id="tDrill">${Object.entries(DRILLS).map(([k, d]) => `<option value="${k}"${T.drill === k ? ' selected' : ''}>${d.n}${k !== 'autre' ? ` · ${fmt(d.L)} cm` : ''}</option>`).join('')}</select></label>
+    <div class="grid2">${field('Longueur de la visseuse (cm)', 'tL', T.L)}${field('Embout qui dépasse du mandrin (cm)', 'tB', T.bit)}</div>
+    <label class="f" style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="tAng" ${T.angle ? 'checked' : ''} style="width:auto"> J'ai un renvoi d'angle</label>
+    <p style="color:var(--mute);font-size:12px;line-height:1.45">La longueur se mesure de l'arrière de la visseuse au bout du mandrin. Pour visser, l'app compte : visseuse + embout + vis (${S().screwType}). Elle te prévient quand une planche gêne.</p>
+    <div class="row"><button class="btn pri" id="tOk">Enregistrer</button></div>`);
+  $('#tDrill').onchange = () => { const d = DRILLS[$('#tDrill').value]; if (d && $('#tDrill').value !== 'autre') $('#mbox [data-k="tL"]').value = fmt(d.L); };
+  $('#tOk').onclick = () => { const L = parseCm($('#mbox [data-k="tL"]').value), bit = parseCm($('#mbox [data-k="tB"]').value); if (!(L > 50) || !(bit >= 0)) return toast('Valeur non comprise'); LS.set('atelier.tools', { drill: $('#tDrill').value, L, bit, angle: $('#tAng').checked }); closeModal(); changed(false); toast('Visseuse enregistrée'); };
+}
+
+// ---------- Pré-perçage : la planche traversée par les vis, à percer à la chaîne avant le montage ----------
+const screwDia = s => { const m = String(s || '').replace(',', '.').match(/(\d+(?:\.\d+)?)\s*[×x*]/i); return m ? +m[1] : 4; };
+const FACE_N = { top: 'dessus', bottom: 'dessous', right: 'côté droit', left: 'côté gauche' };
+function drillPlan() {
+  const I = boardInfo(), byB = new Map();
+  for (const j of jointList()) {
+    const pts = screwPts(j); if (!pts.length) continue;
+    const a = rect(j.A), b = rect(j.B), B = j.B, d = depth(B);
+    const along = B.o === 'h' ? (a.x0 + a.x1) / 2 - b.x0 : (a.y0 + a.y1) / 2 - b.y0;
+    const ok = screwCheck(j).ok;
+    if (!byB.has(B.id)) byB.set(B.id, { B, holes: [] });
+    byB.get(B.id).holes.push({ along: Math.round(along * 10) / 10, across: pts.map(p => Math.round((d - p[2]) * 10) / 10).sort((x, y) => x - y), face: FACE_N[j.face], to: I[j.A.id].code, ok });
+  }
+  // les planches qui ont exactement le même perçage sont regroupées (à percer à la chaîne)
+  const groups = new Map();
+  for (const { B, holes } of byB.values()) {
+    holes.sort((x, y) => x.along - y.along);
+    const sig = [B.o, B.L, depth(B), ...holes.map(h => h.along + ':' + h.across.join('/'))].join('|'); // même trous = même perçage (la face à fraiser peut changer)
+    if (!groups.has(sig)) groups.set(sig, { boards: [], per: [], holes: holes.map(h => ({ ...h })), L: B.L, d: depth(B), o: B.o });
+    const g = groups.get(sig); g.boards.push(B); g.per.push({ code: I[B.id].code, holes });
+  }
+  const out = [...groups.values()].map(g => {
+    g.per.sort((x, y) => x.code.localeCompare(y.code, 'fr', { numeric: true }));
+    g.holes.forEach((h, i) => { const fs = g.per.map(p => p.holes[i]); h.ok = fs.every(x => x.ok); h.bad = g.per.filter((p, k) => !fs[k].ok).map(p => p.code); const same = fs.every(x => x.face === fs[0].face);
+      h.faceTxt = same ? `fraiser ${fs[0].face}${fs.every(x => x.to === fs[0].to) ? ` (vers ${fs[0].to})` : ''}` : 'fraiser ' + g.per.map((p, k) => `${p.code} ${fs[k].face}`).join(' · '); });
+    return { ...g, codes: g.per.map(p => p.code), name: g.boards.length > 1 ? [...new Set(g.boards.map(b => I[b.id].name.replace(/ · C\d+$/, '')))].join(' / ') : I[g.boards[0].id].name };
+  });
+  out.sort((x, y) => x.codes[0].localeCompare(y.codes[0], 'fr', { numeric: true }));
+  return out;
+}
+function drillSvg(g) { // la planche vue à plat, de face : longueur × largeur, avec les trous
+  const W = Math.max(150, Math.min(340, g.L * 70 / g.d)), sc = W / g.L, H = Math.max(26, g.d * sc), k = H / g.d;
+  let s = `<svg viewBox="-4 -14 ${W + 8} ${H + 30}" style="width:${Math.round((W + 8) / 348 * 100)}%;max-width:${Math.round((W + 8) / 348 * 520)}px;display:block;margin:4px 0 2px"><rect x="0" y="0" width="${W}" height="${H}" rx="2" fill="#ecc690" stroke="#6b4a2b"/>`;
+  s += `<text x="0" y="-4" font-size="9" fill="#7a6e60">${g.o === 'h' ? '◀ bout gauche' : '◀ bas'}</text><text x="${W}" y="-4" font-size="9" fill="#7a6e60" text-anchor="end">${g.o === 'h' ? 'bout droit ▶' : 'haut ▶'}</text>`;
+  for (const h of g.holes) {
+    const x = h.along * sc;
+    for (const c of h.across) s += `<circle cx="${x}" cy="${H - c * k}" r="3.2" fill="${h.ok ? '#3d2a17' : '#d92d20'}" stroke="#fff" stroke-width="1"/>`;
+    s += `<text x="${x}" y="${H + 12}" font-size="9" font-weight="700" fill="#24506e" text-anchor="${x < 20 ? 'start' : x > W - 20 ? 'end' : 'middle'}">${fmt(h.along)}</text>`;
+  }
+  return s + '</svg>';
+}
+function drillSectionHtml() {
+  const P = drillPlan(); if (!P.length) return '';
+  const s = S(), dia = screwDia(s.screwType), nH = P.reduce((n, g) => n + g.boards.length * g.holes.reduce((m, h) => m + h.across.length, 0), 0), nB = P.reduce((n, g) => n + g.boards.length, 0);
+  let h = `<div class="sec">🔩 Pré-perçage, avant le montage</div><div style="font-size:13px;line-height:1.45">Foret <b>Ø ${String(dia).replace('.', ',')} mm</b>, traversant, uniquement dans la planche que la vis traverse. Fraise côté tête de vis. <b>${nH} trous</b> sur ${nB} planches.<br><span style="color:var(--mute)">Cotes en cm : le long de la planche depuis le bout gauche (ou le bas), et en largeur depuis le chant avant (en bas du dessin). Les planches qui ont les mêmes trous sont regroupées : empile-les et perce-les d'un coup.</span></div>`;
+  for (const g of P) {
+    h += `<div style="margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#fffdf9"><div style="font-weight:700">${g.codes.map(c => `<span class="tag">${c}</span>`).join(' ')} ${esc(g.name)} · ${fmt(g.L)} cm${g.boards.length > 1 ? ` <span style="color:var(--acc)">× ${g.boards.length} (même perçage)</span>` : ''}</div>${drillSvg(g)}`;
+    h += g.holes.map(x => `<div style="font-size:12px;line-height:1.5">• à <b>${fmt(x.along)} cm</b> : ${x.across.length} trou${x.across.length > 1 ? 's' : ''} à ${x.across.map(fmt).join(' et ')} cm de l'avant · ${x.faceTxt}${x.ok ? '' : ` · <b style="color:#b42318">la visseuse ne passe pas${g.boards.length > 1 ? ' pour ' + x.bad.join(', ') : ''} : visser au tournevis</b>`}</div>`).join('');
+    h += `</div>`;
+  }
+  return h;
+}
+function drillSectionPdf(doc, y, M, PW, PH) {
+  const P = drillPlan(); if (!P.length) return y;
+  const s = S(), dia = screwDia(s.screwType);
+  doc.addPage(); y = M + 4;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(0); doc.text('Pré-perçage, avant le montage', M, y); y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(`Foret Ø ${String(dia).replace('.', ',')} mm traversant, seulement dans la planche que la vis traverse ; fraiser côté tête. Cotes en cm : depuis le bout gauche (ou le bas) et depuis le chant avant.`, M, y, { maxWidth: PW - 2 * M }); y += 9;
+  const W = PW - 2 * M;
+  for (const g of P) {
+    const sc = W / g.L, H = Math.max(6, Math.min(22, g.d * sc)), k = H / g.d, need = 12 + H + 6 + g.holes.length * 4.4;
+    if (y + need > PH - M) { doc.addPage(); y = M + 4; }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`${g.codes.join(', ')}  ${g.name} · ${fmt(g.L)} cm${g.boards.length > 1 ? `  (× ${g.boards.length}, même perçage)` : ''}`, M, y); y += 3;
+    doc.setDrawColor(107, 74, 43); doc.setFillColor(236, 198, 144); doc.rect(M, y, W, H, 'FD');
+    for (const hl of g.holes) { const x = M + hl.along * sc; for (const c of hl.across) { doc.setFillColor(...(hl.ok ? [61, 42, 23] : [217, 45, 32])); doc.circle(x, y + H - c * k, .9, 'F'); } doc.setFontSize(7); doc.setTextColor(36, 80, 110); doc.text(fmt(hl.along), Math.min(Math.max(x, M + 3), M + W - 3), y + H + 3.2, { align: 'center' }); doc.setTextColor(0); }
+    y += H + 7; doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
+    for (const hl of g.holes) { doc.text(`• à ${fmt(hl.along)} cm : ${hl.across.length} trou(s) à ${hl.across.map(fmt).join(' et ')} cm de l'avant · ${hl.faceTxt}${hl.ok ? '' : ` · visseuse ne passe pas${g.boards.length > 1 ? ' (' + hl.bad.join(', ') + ')' : ''} : tournevis`}`, M + 2, y); y += 4.4; }
+    y += 4;
+  }
+  return y;
+}
 
 // ---------- Dessin ----------
 function drawBacks() {
@@ -863,7 +1097,8 @@ function partPanel(p) {
   $('#pClose').onclick = () => { selPart = null; changed(false); };
 }
 function buildHelp() {
-  const P = $('#panel'), k = PT[tool], txt = {
+  const P = $('#panel'), k = PT[tool] || 'joint', txt = {
+    joint: `Touche un assemblage (le bout d'une planche contre une autre) : tu règles ses vis et ses équerres. Point vert = ta visseuse passe, rouge = elle ne passe pas. <a href="#" id="tTools" style="color:var(--acc)">Ma visseuse : ${esc(DRILLS[tools().drill] ? DRILLS[tools().drill].n : 'visseuse')} · ${fmt(tools().L)} cm</a>`,
     porte: 'Touche une case : une porte la ferme. Ensuite tu choisis en applique ou encastrée, 1 ou 2 vantaux, le côté des charnières.',
     tiroir: 'Touche une case : elle devient un tiroir. Tu peux en mettre plusieurs l\'un au-dessus de l\'autre. Le caisson du tiroir est calculé et ajouté au débit.',
     pied: 'Touche sous la planche du bas : 2 pieds se posent aux extrémités (×2 avec ceux de derrière). Achetés ou en pin, à la hauteur que tu veux.',
@@ -872,7 +1107,7 @@ function buildHelp() {
   }[k];
   P.style.display = 'block';
   P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' ? 's' : k === 'porte' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>`;
-  $('#pClose').onclick = () => setTool('sel');
+  $('#pClose').onclick = () => setTool('sel'); if ($('#tTools')) $('#tTools').onclick = e => { e.preventDefault(); toolsDialog(); };
 }
 
 // ---------- Menu Construction ----------
@@ -880,7 +1115,7 @@ function updateBuildBtn() {
   const b = $('#bBuild'), it = BUILD.find(x => x[0] === tool);
   b.classList.toggle('on', !!it);
   b.querySelector('.ico').textContent = it ? it[1] : '🔨';
-  b.querySelector('.bl').textContent = it ? ({ h: 'Planche', v: 'Planche', back: 'Fond' }[it[0]] || it[2]) : 'Construire';
+  b.querySelector('.bl').textContent = it ? ({ h: 'Planche', v: 'Planche', back: 'Fond', joint: 'Vis' }[it[0]] || it[2]) : 'Construire';
 }
 function openBuild() {
   const m = $('#buildMenu');
@@ -932,7 +1167,8 @@ function draw() {
   if (S().showBooks !== false) for (const k of D.books) drawBookRow(k, selBook === k);
   drawObjs();
   drawCleats(); drawLegs();
-  if (tool === 'book') cx.globalAlpha = .3; drawFronts(); cx.globalAlpha = 1;
+  if (tool === 'book' || tool === 'joint') cx.globalAlpha = tool === 'joint' ? .18 : .3; drawFronts(); cx.globalAlpha = 1;
+  drawJoints();
 
   if (preview) for (const b of preview) drawBoard(b, false, null, true);
   if (tool === 'dim' && drag && drag.type === 'cdim' && drag.moved) { const A = drag.A, B = drag.B, X = Math.abs(B[0] - A[0]) >= Math.abs(B[1] - A[1]), a = X ? Math.min(A[0], B[0]) : Math.min(A[1], B[1]), b = X ? Math.max(A[0], B[0]) : Math.max(A[1], B[1]), pa = X ? (A[0] <= B[0] ? A[1] : B[1]) : (A[1] <= B[1] ? A[0] : B[0]), pb = X ? (A[0] <= B[0] ? B[1] : A[1]) : (A[1] <= B[1] ? B[0] : A[0]); if (b - a > .5) { placed = []; drawDim({ dir: X ? 'h' : 'v', key: 'preview', a, b, v: b - a, lo: X ? A[1] : A[0], hi: X ? A[1] : A[0], at: X ? A[1] : A[0], pa, pb }); } }
@@ -1340,6 +1576,7 @@ cv.addEventListener('pointerdown', e => {
     const g = { id: uid(), axis, pos: axis === 'h' ? Math.round(wy) : Math.round(wx) };
     drag = { ...base, type: 'guide', g, fresh: true, raw: g.pos, last: { p, t: e.timeStamp } }; return;
   }
+  if (tool === 'joint') { base.pw = panelOn; panelOn = false; drag = { ...base, type: 'pan', ox: Vw.ox, oy: Vw.oy, jointTap: [wx, wy] }; return; }
   if (PT[tool]) {
     base.pw = panelOn; panelOn = false;
     const hp = hitPart(sx, sy);
@@ -1527,6 +1764,8 @@ function endPointer(e) {
   if (d.type === 'corner') { if (d.moved) pushUndo(d.pre); panelOn = !d.moved; changed(d.moved); return; }
   if (d.type === 'dim') { panelOn = !d.moved; if (d.moved && !d.locked) pushUndo(d.pre); changed(d.moved && !d.locked); return; }
   if (d.type === 'bmove' || d.type === 'bstretch') { panelOn = !d.moved; if (d.moved && !d.locked) pushUndo(d.pre); changed(d.moved); return; }
+  if (d.type === 'pan' && d.jointTap && !d.moved) { jointTap(...d.jointTap); return; }
+  if (d.type === 'pan' && d.jointTap) { panelOn = d.pw; draw(); return; }
   if (d.type === 'pan' && d.partTap && !d.moved) { partTap(tool, ...d.partTap); return; }
   if (d.type === 'pan' && d.partTap) { panelOn = d.pw; draw(); return; }
   if (d.type === 'ptap') { panelOn = !d.moved || d.pw; changed(false); return; }
@@ -1579,7 +1818,7 @@ window.addEventListener('keydown', e => {
 
 // ---------- Panneau ----------
 let draft = { w: 600, h: 400, d: null, x: null, y: null };
-function setTool(t) { tool = t; dimA = null; selObj = null; selPart = null; $('#buildMenu').style.display = 'none'; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); if (t !== 'sel') { sel.clear(); selBook = null; } selDim = null; selGuide = null; if (t === 'rect') { draft.x = draft.y = null; } renderPanel(); draw(); }
+function setTool(t) { tool = t; dimA = null; selObj = null; selPart = null; selJoint = null; $('#buildMenu').style.display = 'none'; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('on', b.dataset.tool === t)); if (t !== 'sel') { sel.clear(); selBook = null; } selDim = null; selGuide = null; if (t === 'rect') { draft.x = draft.y = null; } renderPanel(); draw(); }
 document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
 const TOUCH = matchMedia('(pointer: coarse)').matches;
 const KPATTR = TOUCH ? 'data-kp readonly inputmode="none"' : 'data-kp inputmode="decimal"';
@@ -1588,7 +1827,8 @@ function renderPanel() {
   const p = $('#panel'); updateBuildBtn();
   if (selPart && !partValid(selPart)) selPart = null;
   if (selPart && panelOn) return partPanel(selPart);
-  if (PT[tool]) return buildHelp();
+  if (selJoint && panelOn) { const j = jointList().find(x => x.key === selJoint); if (j) return jointPanel(j); selJoint = null; }
+  if (PT[tool] || tool === 'joint') return buildHelp();
   const fmtChips = cur => Object.entries(BOOKS).map(([key, f]) => `<button class="btn${key === cur ? ' on' : ''}" data-f="${key}" style="padding:6px 9px">${f.n}</button>`).join('');
   if (tool === 'dim') {
     p.style.display = 'block';
@@ -1633,7 +1873,7 @@ function renderPanel() {
     $('#pClose').onclick = () => { selGuide = null; changed(false); };
     return;
   }
-  if ((selDim || selBook || selObj || selPart || sel.size) && !panelOn) { p.style.display = 'none'; return; }
+  if ((selDim || selBook || selObj || selPart || selJoint || sel.size) && !panelOn) { p.style.display = 'none'; return; }
   if (selDim) {
     const st = D.dims[selDim] || {}, L = !!st.lk, h = dimHits.find(x => x.key === selDim);
     if (!h && selDim !== 'W' && selDim !== 'H') { selDim = null; p.style.display = 'none'; return; }
@@ -1825,7 +2065,8 @@ function settingsDialog() {
     <label class="f">Vis par jonction<input id="sSpj" ${KPATTR} value="${s.screwsPerJoint}"></label>
     <label class="f">Type de vis<input id="sScr" value="${s.screwType}"></label></div>
     <p style="color:var(--mute);font-size:12px">L'épaisseur et la largeur s'appliquent aux nouvelles planches. Les planches déjà posées gardent leurs valeurs (modifiables une par une).</p>
-    <div class="row"><button class="btn pri" id="sOk">Enregistrer</button><button class="btn" id="sLockAll">🔒 Tout verrouiller</button>${hiddenDims() ? `<button class="btn" id="sShowDims">👁 Réafficher ${hiddenDims()} cote(s) supprimée(s)</button>` : ''}<button class="btn" id="sUnlockAll">🔓 Tout déverrouiller</button></div>`);
+    <div class="row"><button class="btn pri" id="sOk">Enregistrer</button><button class="btn" id="sTools">🪛 Ma visseuse</button><button class="btn" id="sLockAll">🔒 Tout verrouiller</button>${hiddenDims() ? `<button class="btn" id="sShowDims">👁 Réafficher ${hiddenDims()} cote(s) supprimée(s)</button>` : ''}<button class="btn" id="sUnlockAll">🔓 Tout déverrouiller</button></div>`);
+  $('#sTools').onclick = () => { closeModal(); toolsDialog(); };
   if ($('#sShowDims')) $('#sShowDims').onclick = () => { closeModal(); showHiddenDims(); };
   $('#sLockAll').onclick = () => { pushUndo(); [...D.boards, ...D.books].forEach(x => x.lk = true); closeModal(); changed(); toast('🔒 Tout est verrouillé'); };
   $('#sUnlockAll').onclick = () => { pushUndo(); [...D.boards, ...D.books].forEach(x => delete x.lk); closeModal(); changed(); toast('🔓 Tout est déverrouillé'); };
@@ -1851,16 +2092,20 @@ function debitDialog() {
   { const bi = boardInfo(), pl = D.boards.map(b => ({ b, ...bi[b.id] })).sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
     h += `</table><div class="sec">Pièces</div><table><tr><th>Repère</th><th>Nom</th><th>Longueur</th></tr>` + pl.map(it => `<tr><td><span class="tag">${it.code}</span></td><td>${esc(it.name)}</td><td class="num">${fmt(it.b.L)} cm</td></tr>`).join(''); }
   if (cd.parts.pieces.length) h += `</table><div class="sec">Portes, tiroirs, pieds, tasseaux, fonds</div><table><tr><th>Repère</th><th>Nom</th><th>Qté</th><th>Longueur</th><th>Largeur × ép.</th></tr>` + cd.parts.pieces.map(x => `<tr><td><span class="tag">${x.code}</span></td><td>${esc(x.name)}</td><td class="num">${x.q}</td><td class="num">${fmt(x.L)} cm</td><td>${fmt(x.w)} × ${fmt(x.t)}</td></tr>`).join('');
-  h += `</table><div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
+  h += `</table>` + drillSectionHtml() + `<div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
     h += `<div style="font-size:12px;margin-top:8px"><b>${p.tass ? 'Tasseau' : 'Planche'} ${i + 1}</b> · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm</div><div class="bar">`;
     for (const pc of bn.pieces) h += `<div style="width:${pc.L / s.stock * 100}%" title="${pc.letter} ${fmt(pc.L)}">${pc.letter} ${fmt(pc.L)}</div>`;
     h += `</div>`;
   });
+  { const iss = drillIssues(), T = tools(), I = boardInfo();
+    h += `<div class="sec">🪛 Ma visseuse <a href="#" id="dTools" style="font-size:12px;font-weight:400;color:var(--acc)">${esc(DRILLS[T.drill] ? DRILLS[T.drill].n : 'Visseuse')} · ${fmt(T.L)} cm</a></div>`;
+    h += iss.length ? iss.map(x => `<div style="font-size:13px;line-height:1.45;margin:6px 0;padding:8px;border:1px solid #f4c7c3;background:#fff5f4;border-radius:10px">${issueTxt(x, I)}</div>`).join('') : `<div style="color:#2f9e44;font-weight:700">✓ Toutes les vis et équerres sont accessibles avec ta visseuse.</div>`; }
   h += `<div class="sec">Vis</div><div><span class="big">${cd.screws}</span> vis ${s.screwType} <span style="color:var(--mute)">· ${cd.joints} jonctions × ${s.screwsPerJoint} vis, apparentes depuis l'extérieur</span></div>
     <p style="color:var(--mute);font-size:12px">Une jonction = un bout de planche contre la face d'une autre. Prévois quelques vis de plus.</p>`;
   openModal(h);
   $('#dPdf').onclick = exportPdf;
+  if ($('#dTools')) $('#dTools').onclick = e => { e.preventDefault(); closeModal(); toolsDialog(); };
   $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; for (const x of cd.parts.pieces) t += `${x.code}  ${x.q} × ${fmt(x.L)} cm  (${fmt(x.w)} × ${fmt(x.t)})  ${x.name}\n`; t += `Planches : ${nPlanks} × ${fmt(s.stock)} cm\nVis : ${cd.screws} × ${s.screwType}\n`; for (const b of cd.parts.buys) t += `${b.q} × ${b.txt}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
 }
 
@@ -1926,6 +2171,8 @@ async function exportPdf() {
   for (const p of cd.plans) { doc.text(`À acheter : ${p.bins.length} ${p.tass ? 'tasseau(x)' : 'planche(s)'} de ${fmt(s.stock)} cm, section ${fmt(p.t)} × ${fmt(p.d)} cm${p.tooLong.length ? `  (+${p.tooLong.length} pièce(s) trop longue(s))` : ''}`, M, y); y += 5.5; }
   doc.text(`Vis : ${cd.screws} × ${s.screwType}  (${cd.joints} jonctions × ${s.screwsPerJoint})`, M, y); y += 5.5;
   for (const b of cd.parts.buys) { doc.text(`${b.q} × ${b.txt}`, M, y); y += 5.5; }
+  { const iss = drillIssues(), I = boardInfo(); if (iss.length) { doc.setTextColor(180, 35, 24); doc.setFont('helvetica', 'bold'); doc.text('Attention visseuse :', M, y); y += 5; doc.setFont('helvetica', 'normal');
+    for (const x of iss) { const t = `${I[x.j.B.id].code} → ${I[x.j.A.id].code} (${x.kind}) : il faut ${fmt(x.need)} cm, il y a ${fmt(x.free)} cm${x.by ? ', bloqué par ' + I[x.by.id].code : ''} → à visser avant de poser ${x.by ? I[x.by.id].code : 'la planche qui gêne'}`; for (const ln of doc.splitTextToSize(t, PW - 2 * M)) { doc.text(ln, M, y); y += 4.6; } } doc.setTextColor(0); y += 1; } }
   y += 3.5;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(110);
   doc.text('REPÈRE', M, y); doc.text('QTÉ', M + 22, y); doc.text('LONGUEUR', M + 38, y); doc.text('ÉPAISSEUR × LARGEUR', M + 68, y); y += 2; doc.setTextColor(0);
@@ -1953,6 +2200,7 @@ async function exportPdf() {
     for (const pc of bn.pieces) { const w = pc.L / s.stock * barW; doc.setFillColor(224, 180, 124); doc.rect(x, y, w, 9, 'FD'); if (w > 12) doc.text(`${pc.letter} ${fmt(pc.L)}`, x + w / 2, y + 5.6, { align: 'center' }); else if (w > 3) doc.text(pc.letter, x + w / 2, y + 5.6, { align: 'center' }); x += w; }
     y += 15;
   });
+  drillSectionPdf(doc, y, M, PW, PH);
   await saveFile((D.name || 'meuble').replace(/[\\/:*?"<>|]/g, '-') + '.pdf', doc.output('blob'));
 }
 function lbl(doc, t, x, y, angle) {
@@ -1973,7 +2221,7 @@ function scheduleSave() {
   setStatus('enregistrement…'); clearTimeout(saveT);
   saveT = setTimeout(() => { const body = JSON.parse(JSON.stringify(D)); saving = saving.then(() => db.doc('meubles/' + D.id).set(body)).then(() => setStatus('✓ enregistré'), err => setStatus(err && err.code === 'quota_exceeded' ? 'stockage plein' : 'non synchronisé')); }, 1000);
 }
-function loadDesign(d) { selPart = null; selBook = null; selObj = null; selDim = null; selGuide = null; D = { ...newDesign(), ...d, books: d.books || [], dims: d.dims || {}, cdims: d.cdims || [], objs: d.objs || [], screws: d.screws || {}, parts: d.parts || [], settings: { ...DEF_SETTINGS, ...(d.settings || {}) } }; sel.clear(); loadHist(); $('#name').value = D.name; LS.set('atelier.last', D.id); renderPanel(); fitView(); updateEye(); }
+function loadDesign(d) { selPart = null; selJoint = null; selBook = null; selObj = null; selDim = null; selGuide = null; D = { ...newDesign(), ...d, books: d.books || [], dims: d.dims || {}, cdims: d.cdims || [], objs: d.objs || [], screws: d.screws || {}, brackets: d.brackets || {}, parts: d.parts || [], settings: { ...DEF_SETTINGS, ...(d.settings || {}) } }; sel.clear(); loadHist(); $('#name').value = D.name; LS.set('atelier.last', D.id); renderPanel(); fitView(); updateEye(); }
 async function listDesigns() {
   const local = Object.values(LS.get('atelier.designs') || {});
   if (!db) return local.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -2372,12 +2620,25 @@ function buildScrews3() {
     const pts = screwPts(j), on = V3.sel === j.key, hit = new THREE.Mesh(T3.hitGeo, mats.hit), J = rect(j.A);
     const mid = pts.length ? pts.reduce((s, p) => [s[0] + p[0] / pts.length, s[1] + p[1] / pts.length, s[2] + p[2] / pts.length], [0, 0, 0]) : [j.face === 'left' ? rect(j.B).x0 : j.face === 'right' ? rect(j.B).x1 : (J.x0 + J.x1) / 2, j.face === 'top' ? rect(j.B).y1 : j.face === 'bottom' ? rect(j.B).y0 : (J.y0 + J.y1) / 2, Math.min(depth(j.A), depth(j.B)) / 2];
     hit.position.set(...mid); hit.scale.set(1, 1, Math.max(1, Math.min(depth(j.A), depth(j.B)) / 60)); hit.userData.joint = j.key; g.screws.add(hit);
+    const bad = !screwCheck(j).ok; mats.screwBad = mats.screwBad || new THREE.MeshStandardMaterial({ color: 0xd92d20, metalness: .3, roughness: .4, emissive: 0x500000 });
     for (const [x, y, z, n] of pts) {
-      const m = new THREE.Mesh(T3.screwGeo, on ? mats.screwSel : mats.screw), off = .9;
+      const m = new THREE.Mesh(T3.screwGeo, on ? mats.screwSel : bad ? mats.screwBad : mats.screw), off = .9;
       if (n[0] === 'x') { m.rotation.z = Math.PI / 2; m.position.set(x + (n[1] === '+' ? off : -off), y, z); } else m.position.set(x, y + (n[1] === '+' ? off : -off), z);
       m.userData.joint = j.key; g.screws.add(m);
     }
     if (on && !pts.length) { const m = new THREE.Mesh(new THREE.SphereGeometry(10, 12, 8), mats.screwSel); m.position.set(...mid); g.screws.add(m); }
+    const br = brOf(j);
+    if (br) { // équerres en L dans le coin, réparties sur la profondeur
+      const gj = jGeo(j), sd = brSide(j), [bx, by] = gj.corners[sd], a = br.a || 40, sg = sd === '+' ? 1 : -1, d = Math.min(depth(j.A), depth(j.B)), wd = Math.max(12, a * .4), th = 2.5, bm = brCheck(j).ok ? (mats.bracket = mats.bracket || new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: .7, roughness: .35 })) : mats.screwBad;
+      const zs = br.n === 1 ? [d / 2] : Array.from({ length: br.n }, (_, i) => d * (i + 1) / (br.n + 1));
+      for (const z of zs) {
+        const w1 = gj.axis === 'y' ? new THREE.BoxGeometry(a, th, wd) : new THREE.BoxGeometry(th, a, wd), w2 = gj.axis === 'y' ? new THREE.BoxGeometry(th, a, wd) : new THREE.BoxGeometry(a, th, wd);
+        const m1 = new THREE.Mesh(w1, bm), m2 = new THREE.Mesh(w2, bm);
+        if (gj.axis === 'y') { m1.position.set(bx + sg * a / 2, by + gj.inward * th / 2, z); m2.position.set(bx + sg * th / 2, by + gj.inward * a / 2, z); }
+        else { m1.position.set(bx + gj.inward * th / 2, by + sg * a / 2, z); m2.position.set(bx + gj.inward * a / 2, by + sg * th / 2, z); }
+        m1.userData.joint = m2.userData.joint = j.key; g.screws.add(m1, m2);
+      }
+    }
   }
   render3();
 }
@@ -2472,6 +2733,7 @@ function panel3() {
     if ($('#arEdit')) $('#arEdit').onclick = e => { e.preventDefault(); arSetupUI(); };
     return;
   }
+  selJointSide = null; jointEditor(p, j, close => { if (close) V3.sel = null; build3(); panel3(); $('#v3Count').textContent = cutData().screws + ' vis'; }); return;
   const I = boardInfo(), n = screwsOf(j), custom = D.screws && D.screws[j.key] != null;
   p.innerHTML = `<div style="display:flex;align-items:center;gap:8px"><b style="flex:1;font-size:14px">🔩 <span class="tag">${I[j.B.id].code}</span> ${esc(I[j.B.id].name)} → <span class="tag">${I[j.A.id].code}</span> ${esc(I[j.A.id].name)}</b><button class="btn" id="j3x">✕</button></div>
     <div class="row" style="align-items:center"><button class="btn" id="j3m" style="font-size:22px;width:52px;justify-content:center">−</button><span class="big" style="min-width:90px;text-align:center">${n} vis</span><button class="btn" id="j3p" style="font-size:22px;width:52px;justify-content:center">+</button>${custom ? `<button class="btn" id="j3r">↺ Réglage général (${S().screwsPerJoint})</button>` : ''}</div>
@@ -2487,7 +2749,7 @@ $('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').cl
 // ---------- Boutons ----------
 $('#bUndo').onclick = undo; $('#bRedo').onclick = redo; $('#bFit').onclick = fitView;
 $('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
-const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs']];
+const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs'], ['showScrews', '🔩', 'Équerres et alertes visseuse']];
 function updateEye() { $('#eyeDot').style.display = EYE.some(([k]) => !vis(k)) ? 'block' : 'none'; if ($('#eyeMenu').style.display === 'block') renderEye(); }
 function renderEye() {
   const m = $('#eyeMenu');
