@@ -1,5 +1,5 @@
 // Atelier Meubles : réseau d'abord (toujours la dernière version), copie de secours pour ouvrir l'app sans réseau.
-const C = 'atelier-v7';
+const C = 'atelier-v8';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {

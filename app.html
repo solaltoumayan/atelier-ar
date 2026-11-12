@@ -894,7 +894,7 @@ function drillSectionHtml() {
   const s = S(), dia = screwDia(s.screwType), nH = P.reduce((n, g) => n + g.boards.length * g.holes.reduce((m, h) => m + h.across.length, 0), 0), nB = P.reduce((n, g) => n + g.boards.length, 0);
   let h = `<div class="sec">🔩 Pré-perçage, avant le montage</div><div style="font-size:13px;line-height:1.45">Foret <b>Ø ${String(dia).replace('.', ',')} mm</b>, traversant, uniquement dans la planche que la vis traverse. Fraise côté tête de vis. <b>${nH} trous</b> sur ${nB} planches.<br><span style="color:var(--mute)">Cotes en cm : le long de la planche depuis le bout gauche (ou le bas), et en largeur depuis le chant avant (en bas du dessin). Les planches qui ont les mêmes trous sont regroupées : empile-les et perce-les d'un coup.</span></div>`;
   for (const g of P) {
-    h += `<div style="margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#fffdf9"><div style="font-weight:700">${g.codes.map(c => `<span class="tag">${c}</span>`).join(' ')} ${esc(g.name)} · ${fmt(g.L)} cm${g.boards.length > 1 ? ` <span style="color:var(--acc)">× ${g.boards.length} (même perçage)</span>` : ''}</div>${drillSvg(g)}`;
+    h += `<div style="margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:#fffdf9"><div style="float:right;margin-left:8px">${miniSvg(g.boards.map(b => b.id), 52, 52)}</div><div style="font-weight:700">${g.codes.map(c => `<span class="tag">${c}</span>`).join(' ')} ${esc(g.name)} · ${fmt(g.L)} cm${g.boards.length > 1 ? ` <span style="color:var(--acc)">× ${g.boards.length} (même perçage)</span>` : ''}</div>${drillSvg(g)}`;
     h += g.holes.map(x => `<div style="font-size:12px;line-height:1.5">• à <b>${fmt(x.along)} cm</b> : ${x.across.length} trou${x.across.length > 1 ? 's' : ''} à ${x.across.map(fmt).join(' et ')} cm de l'avant · ${x.faceTxt}${x.ok ? '' : ` · <b style="color:#b42318">la visseuse ne passe pas${g.boards.length > 1 ? ' pour ' + x.bad.join(', ') : ''} : visser au tournevis</b>`}</div>`).join('');
     h += `</div>`;
   }
@@ -906,11 +906,11 @@ function drillSectionPdf(doc, y, M, PW, PH) {
   doc.addPage(); y = M + 4;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(0); doc.text('Pré-perçage, avant le montage', M, y); y += 5;
   doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(`Foret Ø ${String(dia).replace('.', ',')} mm traversant, seulement dans la planche que la vis traverse ; fraiser côté tête. Cotes en cm : depuis le bout gauche (ou le bas) et depuis le chant avant.`, M, y, { maxWidth: PW - 2 * M }); y += 9;
-  const W = PW - 2 * M;
+  const W = PW - 2 * M - 16;
   for (const g of P) {
     const sc = W / g.L, H = Math.max(6, Math.min(22, g.d * sc)), k = H / g.d, need = 12 + H + 6 + g.holes.length * 4.4;
     if (y + need > PH - M) { doc.addPage(); y = M + 4; }
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`${g.codes.join(', ')}  ${g.name} · ${fmt(g.L)} cm${g.boards.length > 1 ? `  (× ${g.boards.length}, même perçage)` : ''}`, M, y); y += 3;
+    miniPdf(doc, g.boards.map(b => b.id), PW - M - 12, y - 4, 12, 12); doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text(`${g.codes.join(', ')}  ${g.name} · ${fmt(g.L)} cm${g.boards.length > 1 ? `  (× ${g.boards.length}, même perçage)` : ''}`, M, y); y += 3;
     doc.setDrawColor(107, 74, 43); doc.setFillColor(236, 198, 144); doc.rect(M, y, W, H, 'FD');
     for (const hl of g.holes) { const x = M + hl.along * sc; for (const c of hl.across) { doc.setFillColor(...(hl.ok ? [61, 42, 23] : [217, 45, 32])); doc.circle(x, y + H - c * k, .9, 'F'); } doc.setFontSize(7); doc.setTextColor(36, 80, 110); doc.text(fmt(hl.along), Math.min(Math.max(x, M + 3), M + W - 3), y + H + 3.2, { align: 'center' }); doc.setTextColor(0); }
     y += H + 7; doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5);
@@ -1005,6 +1005,18 @@ function drawTitle() {
   cx.restore();
 }
 if (document.fonts && document.fonts.load) document.fonts.load("40px 'Great Vibes'").then(() => { try { draw(); } catch { } });
+
+// ---------- Mini-schéma : le meuble en noir, la ou les planches concernées en rouge ----------
+function miniSvg(ids, W = 46, H = 46) {
+  if (!D.boards.length) return '';
+  const on = new Set(ids), bb = bbox(), k = Math.min((W - 4) / (bb.x1 - bb.x0), (H - 4) / (bb.y1 - bb.y0)), ox = (W - (bb.x1 - bb.x0) * k) / 2, oy = (H - (bb.y1 - bb.y0) * k) / 2;
+  const R_ = b => { const r = rect(b); let x = ox + (r.x0 - bb.x0) * k, y = H - oy - (r.y1 - bb.y0) * k, w = (r.x1 - r.x0) * k, h = (r.y1 - r.y0) * k; if (w < 1.6) { x -= (1.6 - w) / 2; w = 1.6; } if (h < 1.6) { y -= (1.6 - h) / 2; h = 1.6; } return `x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"`; };
+  return `<svg width="${W}" height="${H}" style="display:block">${D.boards.filter(b => !on.has(b.id)).map(b => `<rect ${R_(b)} fill="#2b2b2b"/>`).join('')}${D.boards.filter(b => on.has(b.id)).map(b => `<rect ${R_(b)} fill="#e03131"/>`).join('')}</svg>`;
+}
+function miniPdf(doc, ids, X, Y, W, H) { // même schéma dans le PDF (mm)
+  const on = new Set(ids), bb = bbox(), k = Math.min(W / (bb.x1 - bb.x0), H / (bb.y1 - bb.y0)), ox = X + (W - (bb.x1 - bb.x0) * k) / 2, oy = Y + (H - (bb.y1 - bb.y0) * k) / 2;
+  for (const pass of [0, 1]) for (const b of D.boards) { if (on.has(b.id) !== !!pass) continue; const r = rect(b); let w = Math.max(.35, (r.x1 - r.x0) * k), h = Math.max(.35, (r.y1 - r.y0) * k); doc.setFillColor(...(pass ? [224, 49, 49] : [43, 43, 43])); doc.rect(ox + (r.x0 - bb.x0) * k, oy + (bb.y1 - r.y1) * k, w, h, 'F'); }
+}
 
 // ---------- Dessin ----------
 function drawBacks() {
@@ -2182,10 +2194,10 @@ function debitDialog() {
     <div class="sec">À acheter</div>`;
   for (const p of cd.plans) h += `<div><span class="big">${p.bins.length}</span> ${p.tass ? 'tasseau' + (p.bins.length > 1 ? 'x' : '') : 'planche' + (p.bins.length > 1 ? 's' : '')} de ${fmt(s.stock)} cm <span style="color:var(--mute)">· section ${fmt(p.t)} × ${fmt(p.d)}</span>${p.tooLong.length ? ` <b style="color:#b42318">+ ${p.tooLong.length} pièce(s) plus longue(s) que ${fmt(s.stock)} cm</b>` : ''}</div>`;
   for (const b of cd.parts.buys) h += `<div><span class="big">${b.q}</span> ${esc(b.txt)}</div>`;
-  h += `<div class="sec">Liste de débit (${D.boards.length} pièces)</div><table><tr><th>Repère</th><th>Qté</th><th>Longueur</th><th>Épaisseur × largeur</th></tr>`;
-  for (const g of cd.groups) h += `<tr><td><span class="tag">${g.letter}</span></td><td class="num">${g.ids.length}</td><td class="num">${fmt(g.L)} cm</td><td>${fmt(g.t)} × ${fmt(g.d)}</td></tr>`;
+  h += `<div class="sec">Liste de débit (${D.boards.length} pièces)</div><table><tr><th>Repère</th><th>Qté</th><th>Longueur</th><th>Épaisseur × largeur</th><th>Où</th></tr>`;
+  for (const g of cd.groups) h += `<tr><td><span class="tag">${g.letter}</span></td><td class="num">${g.ids.length}</td><td class="num">${fmt(g.L)} cm</td><td>${fmt(g.t)} × ${fmt(g.d)}</td><td style="padding:3px 4px">${miniSvg(g.ids)}</td></tr>`;
   { const bi = boardInfo(), pl = D.boards.map(b => ({ b, ...bi[b.id] })).sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
-    h += `</table><div class="sec">Pièces</div><table><tr><th>Repère</th><th>Nom</th><th>Longueur</th></tr>` + pl.map(it => `<tr><td><span class="tag">${it.code}</span></td><td>${esc(it.name)}</td><td class="num">${fmt(it.b.L)} cm</td></tr>`).join(''); }
+    h += `</table><div class="sec">Pièces</div><table><tr><th>Repère</th><th>Nom</th><th>Longueur</th><th>Où</th></tr>` + pl.map(it => `<tr><td><span class="tag">${it.code}</span></td><td>${esc(it.name)}</td><td class="num">${fmt(it.b.L)} cm</td><td style="padding:3px 4px">${miniSvg([it.b.id], 38, 38)}</td></tr>`).join(''); }
   if (cd.parts.pieces.length) h += `</table><div class="sec">Portes, tiroirs, pieds, tasseaux, fonds</div><table><tr><th>Repère</th><th>Nom</th><th>Qté</th><th>Longueur</th><th>Largeur × ép.</th></tr>` + cd.parts.pieces.map(x => `<tr><td><span class="tag">${x.code}</span></td><td>${esc(x.name)}</td><td class="num">${x.q}</td><td class="num">${fmt(x.L)} cm</td><td>${fmt(x.w)} × ${fmt(x.t)}</td></tr>`).join('');
   h += `</table>` + drillSectionHtml() + `<div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
@@ -2267,13 +2279,13 @@ async function exportPdf() {
   doc.text(`Vis : ${cd.screws} × ${s.screwType}  (${cd.joints} jonctions × ${s.screwsPerJoint})`, M, y); y += 5.5;
   for (const b of cd.parts.buys) { doc.text(`${b.q} × ${b.txt}`, M, y); y += 5.5; }
   { const iss = drillIssues(), I = boardInfo(); if (iss.length) { doc.setTextColor(180, 35, 24); doc.setFont('helvetica', 'bold'); doc.text('Attention visseuse :', M, y); y += 5; doc.setFont('helvetica', 'normal');
-    for (const x of iss) { const t = `${I[x.j.B.id].code} → ${I[x.j.A.id].code} (${x.kind}) : il faut ${fmt(x.need)} cm, il y a ${fmt(x.free)} cm${x.by ? ', bloqué par ' + I[x.by.id].code : ''} → à visser avant de poser ${x.by ? I[x.by.id].code : 'la planche qui gêne'}`; for (const ln of doc.splitTextToSize(t, PW - 2 * M)) { doc.text(ln, M, y); y += 4.6; } } doc.setTextColor(0); y += 1; } }
+    for (const x of iss) { const t = `${I[x.j.B.id].code} > ${I[x.j.A.id].code} (${x.kind}) : il faut ${fmt(x.need)} cm, il y a ${fmt(x.free)} cm${x.by ? ', bloqué par ' + I[x.by.id].code : ''} : à visser avant de poser ${x.by ? I[x.by.id].code : 'la planche qui gêne'}`; for (const ln of doc.splitTextToSize(t, PW - 2 * M)) { doc.text(ln, M, y); y += 4.6; } } doc.setTextColor(0); y += 1; } }
   y += 3.5;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(110);
-  doc.text('REPÈRE', M, y); doc.text('QTÉ', M + 22, y); doc.text('LONGUEUR', M + 38, y); doc.text('ÉPAISSEUR × LARGEUR', M + 68, y); y += 2; doc.setTextColor(0);
-  doc.setDrawColor(200); doc.line(M, y, M + 120, y); y += 5;
+  doc.text('REPÈRE', M, y); doc.text('QTÉ', M + 22, y); doc.text('LONGUEUR', M + 38, y); doc.text('ÉPAISSEUR × LARGEUR', M + 68, y); doc.text('OÙ', M + 112, y); y += 2; doc.setTextColor(0);
+  doc.setDrawColor(200); doc.line(M, y, M + 130, y); y += 5;
   doc.setFontSize(10);
-  for (const g of cd.groups) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.setFont('helvetica', 'bold'); doc.text(g.letter, M + 2, y); doc.text(String(g.ids.length), M + 24, y); doc.text(fmt(g.L) + ' cm', M + 38, y); doc.setFont('helvetica', 'normal'); doc.text(`${fmt(g.t)} × ${fmt(g.d)}`, M + 68, y); y += 6; }
+  for (const g of cd.groups) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.setFont('helvetica', 'bold'); doc.text(g.letter, M + 2, y); doc.text(String(g.ids.length), M + 24, y); doc.text(fmt(g.L) + ' cm', M + 38, y); doc.setFont('helvetica', 'normal'); doc.text(`${fmt(g.t)} × ${fmt(g.d)}`, M + 68, y); miniPdf(doc, g.ids, M + 110, y - 5, 12, 12); y += 13.5; }
   if (cd.parts.pieces.length) {
     y += 4; if (y > PH - 30) { doc.addPage(); y = M + 4; }
     doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.text('Portes, tiroirs, pieds, tasseaux, fonds', M, y); y += 6; doc.setFontSize(9);
