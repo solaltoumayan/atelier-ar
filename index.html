@@ -37,13 +37,14 @@ header{display:flex;align-items:center;gap:10px}header .t{flex:1;min-width:0}
   <div style="position:relative;flex:1;display:flex;min-height:0">
     <model-viewer id="mv" camera-controls touch-action="pan-y" shadow-intensity="1" exposure="1" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" ar-placement="floor" camera-orbit="-30deg 72deg auto">
       <button slot="ar-button" id="arBtn">📱 Voir chez moi en vraie grandeur</button>
+      <div id="trk" style="position:absolute;left:12px;right:12px;bottom:84px;display:none;background:rgba(31,26,20,.85);color:#fff;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.4;z-index:5"></div>
       <div id="sz"><div class="r"><button id="szM" aria-label="Plus petit">−</button><div id="szV">100 %<small></small></div><button id="szP" aria-label="Plus grand">+</button></div><input id="szS" type="range" min="70" max="130" step="1" value="100"></div>
     </model-viewer>
     <div id="msg"></div>
   </div>
   <div class="bar">
-    <div class="seg"><button data-pl="floor" class="on">Posé au sol</button><button data-pl="wall">Fixé au mur</button></div>
-    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Si la taille ne te semble pas juste dans ta pièce, corrige-la avec − / + en haut. La page repart toujours en vraie grandeur (100 %).</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div class="seg"><button data-pl="floor" class="on">Posé au sol</button><button data-pl="wall">Fixé au mur</button></div><div class="seg"><button id="rulerBtn" class="on">📏 Mètre témoin</button></div></div>
+    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Le <b>mètre témoin</b> orange (1 m debout + 1 m au sol, en bandes de 10 cm) sert à vérifier : pose un vrai mètre à côté. S'il ne coïncide pas, corrige avec − / + en haut. La page repart toujours à 100 %.</div>
   </div>
 </div>
 <script type="module">
@@ -136,7 +137,7 @@ function woodTex(vertical) {
   for (let i = 0; i < 26; i++) { const y0 = rng(3, i) * 128, a = 2 + rng(5, i) * 5, f = .01 + rng(8, i) * .02; x.strokeStyle = `rgba(${150 + rng(1, i) * 40 | 0},${95 + rng(2, i) * 30 | 0},50,${.18 + rng(4, i) * .25})`; x.lineWidth = .8 + rng(6, i) * 1.6; x.beginPath(); for (let px = 0; px <= 512; px += 8) { const y = y0 + Math.sin(px * f + i) * a; px ? x.lineTo(px, y) : x.moveTo(px, y); } x.stroke(); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; if (vertical) { t.center.set(.5, .5); t.rotation = Math.PI / 2; } return t;
 }
-function build(M) {
+function build(M, ruler) {
   // tout en mètres, bas du meuble au niveau 0, centré en largeur ; le dos du meuble est à z = 0 (côté mur)
   const S = .001, scene = new THREE.Scene(); let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (const [x, y, w, h] of M.b) { x0 = Math.min(x0, x); x1 = Math.max(x1, x + w); y0 = Math.min(y0, y); y1 = Math.max(y1, y + h); }
@@ -158,9 +159,21 @@ function build(M) {
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w * S, h * S), new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: .05, side: THREE.DoubleSide })); m.position.set(...P(x, y + h / 2, z)); scene.add(m);
   }
+  if (ruler) { // mètre témoin : 1 m debout à gauche du meuble (contre le mur) + 1 m posé au sol devant, en bandes de 10 cm
+    const zmax = Math.max(...M.b.map(b => b[4] || 200), ...(M.p || []).map(q => q[5])), mo = new THREE.MeshStandardMaterial({ color: '#e8590c', roughness: .6 }), mw = new THREE.MeshStandardMaterial({ color: '#fffdf6', roughness: .6 });
+    const lx = (x0 - cx) * S - .1;
+    for (let i = 0; i < 10; i++) {
+      const v = new THREE.Mesh(new THREE.BoxGeometry(.03, .1, .015), i % 2 ? mw : mo); v.position.set(lx, .05 + i * .1, .0075); scene.add(v);
+      const f = new THREE.Mesh(new THREE.BoxGeometry(.1, .004, .03), i % 2 ? mw : mo); f.position.set((x0 - cx) * S + .05 + i * .1, .002, zmax * S + .08); scene.add(f);
+    }
+  }
   return { scene, W: x1 - x0, H: y1 - y0 };
 }
-let blobUrl = null, DIM = null;
+let blobUrl = null, DIM = null, MODEL = null, RULER = true;
+async function makeModel() {
+  const { scene, W, H } = build(MODEL, RULER), glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+  if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' })); $('#mv').src = blobUrl; return { W, H };
+}
 const SZK = 'atelier.ar.scale';
 function setScale(pc, save = true) {
   pc = Math.max(70, Math.min(130, Math.round(pc))); const k = pc / 100;
@@ -180,14 +193,20 @@ $('#szV').onclick = () => setScale(100);
   if (!h) { $('#msg').textContent = 'Aucun meuble : ouvre cette page depuis le bouton « Voir chez moi » de la vue 3D de l\'app.'; return; }
   $('#msg').textContent = 'Préparation du meuble…';
   try {
-    const M = await decode(h), { scene, W, H } = build(M);
+    const M = await decode(h); MODEL = M; const { W, H } = await makeModel();
     $('#name').textContent = M.n || 'Mon meuble'; $('#dims').textContent = `${fmt(W)} × ${fmt(H)} cm · vraie grandeur`; document.title = (M.n || 'Mon meuble') + ' · chez moi';
-    const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
-    blobUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' })); mv.src = blobUrl; $('#msg').textContent = '';
+    $('#msg').textContent = '';
     if (M.wall) setPl('wall');
     DIM = { W, H }; const pc = 100; try { localStorage.removeItem(SZK); } catch { }
     setScale(pc, false); $('#sz').classList.add('on');
   } catch (e) { $('#msg').textContent = 'Lien illisible : rouvre-le depuis l\'app. (' + (e.message || e) + ')'; }
+  const trk = t => { const e = $('#trk'); e.style.display = t ? 'block' : 'none'; e.textContent = t || ''; };
+  mv.addEventListener('ar-tracking', ev => trk(ev.detail.status === 'not-tracking' ? '📱 Le téléphone ne voit plus le sol : balaie-le lentement, avec de la lumière. Tant que le sol n\'est pas trouvé, la taille est fausse.' : ''));
+  mv.addEventListener('ar-status', ev => {
+    if (ev.detail.status === 'session-started') trk('Balaie lentement le sol jusqu\'à ce que le meuble se pose dessus (son ombre apparaît). Avant ça, il flotte et paraît à la mauvaise taille.');
+    if (ev.detail.status === 'object-placed') trk(RULER ? 'Posé. Vérifie avec un vrai mètre contre le mètre orange : s\'ils ne coïncident pas, ajuste avec − / +.' : '');
+    if (ev.detail.status === 'not-presenting') trk('');
+  });
   mv.addEventListener('ar-status', ev => { if (ev.detail.status === 'failed') $('#note').textContent = 'La réalité augmentée n\'a pas démarré. Il faut Chrome sur un Android compatible ARCore (Services Google Play pour la RA).'; });
   setTimeout(() => { if (!mv.canActivateAR) $('#note').textContent = 'La réalité augmentée n\'est pas disponible ici. Ouvre cette page dans Chrome sur ton téléphone Android (avec « Services Google Play pour la RA »). Tu peux quand même faire tourner le meuble en 3D.'; }, 2500);
 })();
@@ -199,6 +218,7 @@ $('#back').onclick = () => {
 };
 function setPl(p) { $('#mv').setAttribute('ar-placement', p); document.querySelectorAll('[data-pl]').forEach(b => b.classList.toggle('on', b.dataset.pl === p)); }
 document.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => setPl(b.dataset.pl));
+$('#rulerBtn').onclick = async () => { if (!MODEL) return; RULER = !RULER; $('#rulerBtn').classList.toggle('on', RULER); await makeModel(); };
 </script>
 </body>
 </html>
