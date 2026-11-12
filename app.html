@@ -118,6 +118,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
   <header>
     <button class="btn" id="bMenu" title="Mes meubles">☰</button>
     <input id="name" value="Nouveau meuble" aria-label="Nom du meuble">
+    <button class="btn" id="bVer" title="Versions de ce meuble" style="padding:6px 9px;font-weight:700;white-space:nowrap">🗂</button>
     <span id="status"></span>
     <button class="btn" id="bUndo" title="Annuler (Ctrl+Z)"><span class="ico" style="font-size:18px">↶</span><span class="lbl-d">Annuler</span></button>
     <button class="btn" id="bRedo" title="Rétablir (Ctrl+Y)"><span class="ico" style="font-size:18px">↷</span></button>
@@ -147,7 +148,7 @@ if (navigator.storage && navigator.storage.persist) navigator.storage.persist().
   <div id="p3d" style="background:var(--card);padding:10px 12px;border-top:1px solid var(--line)"></div>
 </div>
 <div id="room">
-  <div class="rbar"><button class="btn" id="rBack">← Plan</button><b id="rTitle">Dans ma pièce</b><button class="btn pri" id="rSave">⬇ Image</button></div>
+  <div class="rbar"><button class="btn" id="rBack">← Plan</button><b id="rTitle">Dans ma pièce</b><button class="btn" id="rUndo" title="Annuler">↶</button><button class="btn" id="rFit" title="Recadrer la photo">⤢</button><button class="btn pri" id="rSave">⬇</button></div>
   <div id="rStage"><canvas id="rcv"></canvas></div>
   <div id="rPanel"></div>
   <input type="file" id="rCam" accept="image/*" capture="environment" hidden>
@@ -915,6 +916,63 @@ function drillSectionPdf(doc, y, M, PW, PH) {
     y += 4;
   }
   return y;
+}
+
+// ---------- Versions d'un meuble (V1, V2…) : pour revenir en arrière et comparer chez moi ----------
+// D.versions = [{ id, name, at, snap }] ; D.curVer = version d'où vient l'état en cours ; D.draft = l'état en cours mis de côté quand on passe à une autre version
+const verList = () => D.versions || (D.versions = []);
+const curSnap = () => snapshot();
+const snapNorm = x => String(x).replace(/"show\w+":(true|false),?/g, '');
+function verDirty() { const v = verList().find(x => x.id === D.curVer); return !v || snapNorm(v.snap) !== snapNorm(curSnap()); }
+function verSave(name) {
+  const n = verList().length + 1, v = { id: uid(), name: name || 'V' + n, at: Date.now(), snap: curSnap() };
+  verList().push(v); D.curVer = v.id; D.draft = null; scheduleSave(); renderPanel(); return v;
+}
+function verUpdate(v) { v.snap = curSnap(); v.at = Date.now(); D.curVer = v.id; D.draft = null; scheduleSave(); renderPanel(); }
+function verOpen(id) { // passer à une version ; l'état en cours non enregistré est gardé en brouillon
+  if (id === 'draft') { if (!D.draft) return; const d = D.draft; pushUndo(); D.draft = null; restore(d.snap); D.curVer = d.from || null; changed(); return; }
+  const v = verList().find(x => x.id === id); if (!v) return;
+  if (verDirty() && !(D.draft && D.draft.snap === curSnap())) D.draft = { snap: curSnap(), from: D.curVer || null, at: Date.now() };
+  pushUndo(); restore(v.snap); D.curVer = v.id; changed();
+}
+function verThumb(snap, W = 64, H = 64) { // petite vue de face
+  let bs; try { bs = JSON.parse(snap).boards || []; } catch { bs = []; } if (!bs.length) return `<svg width="${W}" height="${H}"></svg>`;
+  const R = b => b.o === 'h' ? [b.x, b.y, b.L, b.t] : [b.x, b.y, b.t, b.L], rs = bs.map(R);
+  const x0 = Math.min(...rs.map(r => r[0])), y0 = Math.min(...rs.map(r => r[1])), x1 = Math.max(...rs.map(r => r[0] + r[2])), y1 = Math.max(...rs.map(r => r[1] + r[3]));
+  const k = Math.min((W - 6) / (x1 - x0), (H - 6) / (y1 - y0)), ox = (W - (x1 - x0) * k) / 2, oy = (H - (y1 - y0) * k) / 2;
+  return `<svg width="${W}" height="${H}" style="display:block;background:#f6f1e8;border-radius:8px">${rs.map(([x, y, w, h]) => `<rect x="${(ox + (x - x0) * k).toFixed(1)}" y="${(H - oy - (y - y0 + h) * k).toFixed(1)}" width="${Math.max(1, w * k).toFixed(1)}" height="${Math.max(1, h * k).toFixed(1)}" fill="#d9a865"/>`).join('')}</svg>`;
+}
+const verDims = snap => { try { const bs = JSON.parse(snap).boards || []; if (!bs.length) return ''; const bb = bbox(bs); return `${fmt(bb.x1 - bb.x0)} × ${fmt(bb.y1 - bb.y0)} cm`; } catch { return ''; } };
+// barre de pastilles pour passer vite d'une version à l'autre (pièce, 3D)
+function verChips(onSwitch) {
+  if (!verList().length) return '';
+  const dirty = verDirty(), chips = verList().map(v => `<button class="btn${D.curVer === v.id && !dirty ? ' on' : ''}" data-ver="${v.id}" style="padding:6px 11px;flex:none">${esc(v.name)}${D.curVer === v.id && dirty ? ' ✏' : ''}</button>`);
+  if (D.draft) chips.push(`<button class="btn" data-ver="draft" style="padding:6px 11px;flex:none">✏ Brouillon</button>`);
+  return `<div class="verbar" style="display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;align-items:center"><span style="font-size:12px;color:var(--mute);flex:none">Versions :</span>${chips.join('')}</div>`;
+}
+function bindVerChips(root, after) { root.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { verOpen(b.dataset.ver); after(); }); }
+function versionsDialog() {
+  const vs = verList(), dirty = verDirty();
+  openModal(`<h2>Versions · ${esc(D.name)}<button class="btn" data-close>✕</button></h2>
+    <p style="margin:0 0 8px;color:var(--mute);font-size:13px">Enregistre une version quand le meuble te plaît. Tu peux ensuite y revenir et les comparer sur ta photo (Pièce), en 3D ou avec la caméra.</p>
+    <div class="row" style="margin:0 0 10px"><button class="btn pri" id="vNew">📌 Enregistrer comme V${vs.length + 1}</button></div>
+    ${D.draft ? `<div class="it" style="display:flex;gap:10px;align-items:center;border:1px dashed var(--acc);border-radius:12px;padding:8px;margin-bottom:8px">${verThumb(D.draft.snap)}<div style="flex:1"><b>✏ Brouillon</b><small style="display:block;color:var(--mute)">État en cours mis de côté · ${new Date(D.draft.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</small></div><button class="btn" data-vo="draft">Reprendre</button></div>` : ''}
+    <div id="vList">${vs.length ? '' : '<p style="color:var(--mute)">Aucune version pour l\'instant.</p>'}</div>`);
+  const L = $('#vList');
+  [...vs].reverse().forEach(v => {
+    const it = document.createElement('div'), cur = D.curVer === v.id;
+    it.style.cssText = 'display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:8px;margin-bottom:8px' + (cur ? ';border-color:var(--acc);background:#fff8f3' : '');
+    it.innerHTML = `${verThumb(v.snap)}<div style="flex:1;min-width:0"><b>${esc(v.name)}</b>${cur ? ` <span style="color:var(--acc);font-size:12px">· ouverte${dirty ? ', modifiée' : ''}</span>` : ''}<small style="display:block;color:var(--mute)">${verDims(v.snap)} · ${new Date(v.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</small>
+      <div class="row" style="margin-top:6px;gap:5px">${cur && !dirty ? '' : `<button class="btn" data-a="open">Ouvrir</button>`}${cur && dirty ? `<button class="btn" data-a="upd">Enregistrer les modifs</button>` : ''}<button class="btn" data-a="ren">✎</button><button class="btn danger" data-a="del">🗑</button></div></div>`;
+    const q = a => it.querySelector(`[data-a=${a}]`);
+    if (q('open')) q('open').onclick = () => { verOpen(v.id); closeModal(); toast(`${v.name} ouverte`); };
+    if (q('upd')) q('upd').onclick = () => { verUpdate(v); versionsDialog(); toast(`${v.name} mise à jour`); };
+    q('ren').onclick = () => { const b = q('ren'); const inp = document.createElement('input'); inp.value = v.name; inp.style.cssText = 'font:inherit;padding:6px;border:1px solid var(--line);border-radius:8px;width:110px'; b.replaceWith(inp); inp.focus(); inp.select(); const ok = () => { const n = inp.value.trim(); if (n) { v.name = n; scheduleSave(); } versionsDialog(); }; inp.onchange = ok; inp.onblur = ok; };
+    q('del').onclick = () => { const b = q('del'); if (!b.dataset.c) { b.dataset.c = 1; b.textContent = 'Supprimer ?'; return; } D.versions = vs.filter(x => x !== v); if (D.curVer === v.id) D.curVer = null; scheduleSave(); renderPanel(); versionsDialog(); };
+    L.appendChild(it);
+  });
+  $('#vNew').onclick = () => { const v = verSave(); versionsDialog(); toast(`${v.name} enregistrée`); };
+  document.querySelectorAll('#mbox [data-vo=draft]').forEach(b => b.onclick = () => { verOpen('draft'); closeModal(); toast('Brouillon repris'); });
 }
 
 // ---------- Dessin ----------
@@ -1824,7 +1882,7 @@ const TOUCH = matchMedia('(pointer: coarse)').matches;
 const KPATTR = TOUCH ? 'data-kp readonly inputmode="none"' : 'data-kp inputmode="decimal"';
 function field(label, key, val) { return `<label class="f">${label}<input data-k="${key}" ${KPATTR} value="${fmt(val)}"></label>`; }
 function renderPanel() {
-  const p = $('#panel'); updateBuildBtn();
+  const p = $('#panel'); updateBuildBtn(); { const v = (D.versions || []).find(x => x.id === D.curVer), b = $('#bVer'); if (b) b.textContent = v ? v.name + (verDirty() ? ' ✏' : '') : '🗂'; }
   if (selPart && !partValid(selPart)) selPart = null;
   if (selPart && panelOn) return partPanel(selPart);
   if (selJoint && panelOn) { const j = jointList().find(x => x.key === selJoint); if (j) return jointPanel(j); selJoint = null; }
@@ -2027,8 +2085,13 @@ function decorateLock(p) {
 function changed(save = true) { if (save && D.parts && D.parts.length) D.parts = D.parts.filter(partValid); renderPanel(); draw(); if (save) scheduleSave(); }
 
 // ---------- Fenêtres ----------
-function openModal(html) { $('#mbox').innerHTML = html; $('#modal').style.display = 'flex'; const c = $('#mbox [data-close]'); if (c) c.onclick = closeModal; }
-function closeModal() { $('#modal').style.display = 'none'; }
+// bouton « retour » d'Android : ferme la fenêtre ouverte (débit, pièce, 3D) au lieu de quitter l'app
+let popIgnore = 0;
+function layerOpen(n) { try { history.pushState({ atelier: n }, ''); } catch { } }
+function layerClosed() { try { if (history.state && history.state.atelier) { popIgnore++; history.back(); } } catch { } }
+window.addEventListener('popstate', () => { if (popIgnore) { popIgnore--; return; } if ($('#modal').style.display === 'flex') return closeModal(true); if (roomOpen()) return closeRoom(true); if (v3Open()) return close3D(true); });
+function openModal(html) { if ($('#modal').style.display !== 'flex') layerOpen('modal'); $('#mbox').innerHTML = html; $('#modal').style.display = 'flex'; const c = $('#mbox [data-close]'); if (c) c.onclick = closeModal; }
+function closeModal(fromPop) { if ($('#modal').style.display !== 'flex') return; $('#modal').style.display = 'none'; if (fromPop !== true) layerClosed(); }
 $('#modal').addEventListener('pointerdown', e => { if (e.target.id === 'modal') closeModal(); });
 let toastT; function toast(t) { const el = $('#toast'); el.textContent = t; el.style.opacity = 1; clearTimeout(toastT); toastT = setTimeout(() => el.style.opacity = 0, 2600); }
 
@@ -2221,7 +2284,7 @@ function scheduleSave() {
   setStatus('enregistrement…'); clearTimeout(saveT);
   saveT = setTimeout(() => { const body = JSON.parse(JSON.stringify(D)); saving = saving.then(() => db.doc('meubles/' + D.id).set(body)).then(() => setStatus('✓ enregistré'), err => setStatus(err && err.code === 'quota_exceeded' ? 'stockage plein' : 'non synchronisé')); }, 1000);
 }
-function loadDesign(d) { selPart = null; selJoint = null; selBook = null; selObj = null; selDim = null; selGuide = null; D = { ...newDesign(), ...d, books: d.books || [], dims: d.dims || {}, cdims: d.cdims || [], objs: d.objs || [], screws: d.screws || {}, brackets: d.brackets || {}, parts: d.parts || [], settings: { ...DEF_SETTINGS, ...(d.settings || {}) } }; sel.clear(); loadHist(); $('#name').value = D.name; LS.set('atelier.last', D.id); renderPanel(); fitView(); updateEye(); }
+function loadDesign(d) { if (!d.versions) d.versions = []; selPart = null; selJoint = null; selBook = null; selObj = null; selDim = null; selGuide = null; D = { ...newDesign(), ...d, books: d.books || [], dims: d.dims || {}, cdims: d.cdims || [], objs: d.objs || [], screws: d.screws || {}, brackets: d.brackets || {}, parts: d.parts || [], settings: { ...DEF_SETTINGS, ...(d.settings || {}) } }; sel.clear(); loadHist(); $('#name').value = D.name; LS.set('atelier.last', D.id); renderPanel(); fitView(); updateEye(); }
 async function listDesigns() {
   const local = Object.values(LS.get('atelier.designs') || {});
   if (!db) return local.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -2229,7 +2292,8 @@ async function listDesigns() {
   catch { return local.sort((a, b) => b.updatedAt - a.updatedAt); }
 }
 async function menuDialog() {
-  openModal(`<h2>Mes meubles<button class="btn" data-close>✕</button></h2><div class="row" style="margin:0 0 10px"><button class="btn pri" id="mNew">+ Nouveau meuble</button><button class="btn" id="mExp">⬇ Exporter (.json)</button><label class="btn" style="cursor:pointer">⬆ Importer<input type="file" id="mImp" accept=".json,application/json" hidden></label></div><div class="list" id="mList">Chargement…</div>`);
+  openModal(`<h2>Mes meubles<button class="btn" data-close>✕</button></h2><div class="row" style="margin:0 0 10px"><button class="btn pri" id="mNew">+ Nouveau meuble</button><button class="btn" id="mVer">🗂 Versions de « ${esc(D.name)} »</button><button class="btn" id="mExp">⬇ Exporter (.json)</button><label class="btn" style="cursor:pointer">⬆ Importer<input type="file" id="mImp" accept=".json,application/json" hidden></label></div><div class="list" id="mList">Chargement…</div>`);
+  $('#mVer').onclick = versionsDialog;
   $('#mNew').onclick = () => { scheduleSave(); loadDesign(newDesign()); closeModal(); scheduleSave(); };
   $('#mExp').onclick = () => saveFile((D.name || 'meuble') + '.json', JSON.stringify(D, null, 1));
   $('#mImp').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const d = JSON.parse(await f.text()); if (!Array.isArray(d.boards)) throw 0; d.id = uid(); d.name = (d.name || 'Import') + ' (import)'; loadDesign(d); closeModal(); scheduleSave(); } catch { toast('Fichier non reconnu'); } };
@@ -2238,7 +2302,7 @@ async function menuDialog() {
   for (const d of list) {
     const it = document.createElement('div'); it.className = 'it';
     const bb = d.boards && d.boards.length ? bbox(d.boards) : null;
-    it.innerHTML = `<div class="n">${esc(d.name)}${d.id === D.id ? ' <span style="color:var(--acc)">· ouvert</span>' : ''}<small>${bb ? fmt(bb.x1 - bb.x0) + ' × ' + fmt(bb.y1 - bb.y0) + ' cm · ' : ''}${(d.boards || []).length} planches · ${new Date(d.updatedAt).toLocaleDateString('fr-FR')}</small></div><button class="btn" data-a="open">Ouvrir</button><button class="btn" data-a="dup">Copier</button><button class="btn danger" data-a="del">✕</button>`;
+    it.innerHTML = `<div class="n">${esc(d.name)}${d.id === D.id ? ' <span style="color:var(--acc)">· ouvert</span>' : ''}${(d.versions || []).length ? ` <span style="font-size:12px;color:var(--mute)">· ${d.versions.length} version${d.versions.length > 1 ? 's' : ''}</span>` : ''}<small>${bb ? fmt(bb.x1 - bb.x0) + ' × ' + fmt(bb.y1 - bb.y0) + ' cm · ' : ''}${(d.boards || []).length} planches · ${new Date(d.updatedAt).toLocaleDateString('fr-FR')}</small></div><button class="btn" data-a="open">Ouvrir</button><button class="btn" data-a="dup">Copier</button><button class="btn danger" data-a="del">✕</button>`;
     it.querySelector('[data-a=open]').onclick = () => { loadDesign(d); closeModal(); };
     it.querySelector('[data-a=dup]').onclick = () => { loadDesign({ ...JSON.parse(JSON.stringify(d)), id: uid(), name: d.name + ' (copie)' }); scheduleSave(); closeModal(); };
     const del = it.querySelector('[data-a=del]');
@@ -2264,20 +2328,30 @@ async function saveFile(name, data) {
 // ---------- Dans ma pièce : le meuble à l'échelle sur une photo ----------
 // Une feuille de taille connue (A4) collée au mur donne l'échelle et la perspective du mur (homographie).
 // On en déduit la caméra (focale estimée) pour dessiner le meuble en relief, collé au mur.
-const RM = { img: null, iw: 0, ih: 0, step: 'start', pts: null, refKind: 'a4', refW: 210, refH: 297, Hm: null, Hinv: null, cam: null, sheetH: 1000, onFloor: true, bottom: 0, offX: null, books: true, relief: true, view: null, drag: null };
+const RM = { img: null, iw: 0, ih: 0, step: 'start', pts: null, refKind: 'a4', refW: 210, refH: 297, Hm: null, Hinv: null, cam: null, sheetH: 1000, onFloor: true, bottom: 0, offX: null, books: true, relief: true, view: null, drag: null, hist: [] };
 const rcv = $('#rcv'), rx = rcv.getContext('2d');
+function rSnap() { return JSON.stringify({ pts: RM.pts, offX: RM.offX, bottom: RM.bottom, sheetH: RM.sheetH, onFloor: RM.onFloor, step: RM.step, refKind: RM.refKind, refW: RM.refW, refH: RM.refH, relief: RM.relief, books: RM.books }); }
+function rPush() { const s_ = rSnap(); if (RM.hist[RM.hist.length - 1] !== s_) { RM.hist.push(s_); if (RM.hist.length > 80) RM.hist.shift(); } rUndoBtn(); }
+function rUndoBtn() { const b = $('#rUndo'); if (b) b.disabled = !RM.hist.length || !RM.img; }
+function rUndo() {
+  let s_ = RM.hist.pop(); if (s_ === rSnap()) s_ = RM.hist.pop(); if (!s_) return rUndoBtn();
+  const o = JSON.parse(s_); Object.assign(RM, o);
+  if (o.step === 'place' && RM.pts) { const keep = RM.offX; roomCalibrate(true); RM.offX = keep; } else { RM.step = o.step; }
+  roomPanel(); roomDraw(); rUndoBtn();
+}
 function openRoom() {
   if (!D.boards.length) return toast('Dessine d\'abord un meuble');
-  $('#room').style.display = 'flex'; RM.step = RM.img ? (RM.Hm ? 'place' : 'calib') : 'start'; roomPanel(); roomResize();
+  if (!roomOpen()) layerOpen('room'); $('#room').style.display = 'flex'; RM.step = RM.img ? (RM.Hm ? 'place' : 'calib') : 'start'; roomPanel(); roomResize();
 }
-function closeRoom() { $('#room').style.display = 'none'; }
+function closeRoom(fromPop) { if (!roomOpen()) return; $('#room').style.display = 'none'; if (fromPop !== true) layerClosed(); }
 function roomOpen() { return $('#room').style.display === 'flex'; }
 function roomResize() {
   const r = $('#rStage').getBoundingClientRect(); RM.W = r.width; RM.H = r.height;
   rcv.width = Math.round(r.width * DPR); rcv.height = Math.round(r.height * DPR); rcv.style.width = r.width + 'px'; rcv.style.height = r.height + 'px';
-  if (RM.img) { const s = Math.min(RM.W / RM.iw, RM.H / RM.ih); RM.view = { s, ox: (RM.W - RM.iw * s) / 2, oy: (RM.H - RM.ih * s) / 2 }; }
-  roomDraw();
+  rFit(true);
 }
+function rFit(noDraw) { if (RM.img) { const s = Math.min(RM.W / RM.iw, RM.H / RM.ih); RM.view = { s, ox: (RM.W - RM.iw * s) / 2, oy: (RM.H - RM.ih * s) / 2, s0: s }; } if (!noDraw || true) roomDraw(); }
+function rZoomAt(px, py, f) { const v = RM.view; if (!v) return; const ns = clamp(v.s * f, v.s0 * .8, v.s0 * 30); f = ns / v.s; v.ox = px - (px - v.ox) * f; v.oy = py - (py - v.oy) * f; v.s = ns; roomDraw(); }
 window.addEventListener('resize', () => { if (roomOpen()) roomResize(); });
 // Photos envoyées à Claude dans la conversation : Claude les dépose dans l'app (utile quand la galerie ne s'ouvre pas)
 async function sentPhotos() {
@@ -2305,7 +2379,7 @@ async function roomLoad(file) {
     RM.img = c; RM.iw = c.width; RM.ih = c.height;
     const cw = RM.iw / 2, ch = RM.ih / 2, a = Math.min(RM.iw, RM.ih) * .1;
     RM.pts = [[cw - a * .7, ch + a], [cw + a * .7, ch + a], [cw + a * .7, ch - a], [cw - a * .7, ch - a]];
-    RM.Hm = null; RM.offX = null; RM.step = 'calib'; roomMsg(''); roomPanel(); roomResize();
+    RM.Hm = null; RM.offX = null; RM.hist = []; RM.step = 'calib'; roomMsg(''); roomPanel(); roomResize(); rUndoBtn();
   };
   const fail = () => { const heic = /hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name || ''); roomMsg(heic ? 'Cette photo est au format HEIC, que le navigateur ne lit pas. Dans l\'appareil photo, passe le format en JPEG, ou fais une capture d\'écran de la photo et choisis-la.' : `Photo illisible (${file.type || 'format inconnu'}). Essaie une autre photo en JPEG ou PNG.`, true); };
   // 1) décodage moderne (respecte l'orientation du téléphone)
@@ -2366,14 +2440,14 @@ function orderPts(p) { // remet les 4 coins dans l'ordre bas-gauche, bas-droit, 
   let st = 0; srt.forEach((q, i) => { if (q[1] - q[0] > srt[st][1] - srt[st][0]) st = i; });
   return [0, 1, 2, 3].map(i => srt[(st + i) % 4]);
 }
-function roomCalibrate() {
+function roomCalibrate(silent) {
   const P = orderPts(RM.pts), d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
   let w = RM.refW, h = RM.refH;
   if (RM.refKind === 'a4') { const horiz = d(P[0], P[1]) + d(P[3], P[2]), vert = d(P[0], P[3]) + d(P[1], P[2]); [w, h] = horiz > vert ? [297, 210] : [210, 297]; }
   const H = homography([[0, 0], [w, 0], [w, h], [0, h]], P); if (!H) return toast('Coins mal placés : écarte-les sur les 4 coins');
   RM.sheetW = w; RM.Hm = H; RM.Hinv = inv3(H); RM.cam = cameraFrom(H); RM.pts = P;
   if (RM.offX == null) { const bb = bbox(); RM.offX = Math.round(w / 2 - (bb.x1 - bb.x0) / 2); }
-  RM.step = 'place'; roomPanel(); roomDraw();
+  RM.step = 'place'; if (!silent) { roomPanel(); roomDraw(); }
 }
 const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 function roomBoxes() {
@@ -2414,7 +2488,9 @@ function roomDraw() {
     const P = orderPts(RM.pts);
     rx.beginPath(); P.forEach((q, i) => { const [X, Y] = S_(...q); i ? rx.lineTo(X, Y) : rx.moveTo(X, Y); }); rx.closePath();
     rx.fillStyle = 'rgba(11,138,150,.22)'; rx.fill(); rx.strokeStyle = '#0b8a96'; rx.lineWidth = 2; rx.stroke();
-    RM.pts.forEach(q => { const [X, Y] = S_(...q); rx.beginPath(); rx.arc(X, Y, 13, 0, Math.PI * 2); rx.fillStyle = 'rgba(255,255,255,.25)'; rx.fill(); rx.lineWidth = 3; rx.strokeStyle = '#fff'; rx.stroke(); rx.lineWidth = 1.5; rx.strokeStyle = '#d9480f'; rx.beginPath(); rx.moveTo(X - 6, Y); rx.lineTo(X + 6, Y); rx.moveTo(X, Y - 6); rx.lineTo(X, Y + 6); rx.stroke(); });
+    let md = 1e9; for (let i = 0; i < 4; i++) for (let k = i + 1; k < 4; k++) md = Math.min(md, Math.hypot((RM.pts[i][0] - RM.pts[k][0]) * s, (RM.pts[i][1] - RM.pts[k][1]) * s));
+    const hr = md < 40 ? 6 : 13; RM.small = md < 60;
+    RM.pts.forEach(q => { const [X, Y] = S_(...q); rx.beginPath(); rx.arc(X, Y, hr, 0, Math.PI * 2); rx.fillStyle = 'rgba(255,255,255,.25)'; rx.fill(); rx.lineWidth = 3; rx.strokeStyle = '#fff'; rx.stroke(); rx.lineWidth = 1.5; rx.strokeStyle = '#d9480f'; rx.beginPath(); rx.moveTo(X - 6, Y); rx.lineTo(X + 6, Y); rx.moveTo(X, Y - 6); rx.lineTo(X, Y + 6); rx.stroke(); });
     if (RM.drag && RM.drag.i != null) roomLoupe(RM.pts[RM.drag.i]);
   } else if (RM.step === 'place') {
     rx.save(); rx.beginPath(); rx.rect(ox, oy, RM.iw * s, RM.ih * s); rx.clip(); renderFurniture(rx, s, ox, oy); rx.restore();
@@ -2431,24 +2507,34 @@ function roomLoupe(q) {
 // doigt / souris sur la photo
 const rpos = e => { const r = rcv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 const toImg = ([X, Y]) => [(X - RM.view.ox) / RM.view.s, (Y - RM.view.oy) / RM.view.s];
+const RP = new Map();
 rcv.addEventListener('pointerdown', e => {
-  if (!RM.img) return; rcv.setPointerCapture(e.pointerId); const p = rpos(e);
+  if (!RM.img) return; rcv.setPointerCapture(e.pointerId); const p = rpos(e); RP.set(e.pointerId, p);
+  if (RP.size === 2) { const [a, b] = [...RP.values()]; RM.drag = { pinch: true, d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], v0: { ...RM.view } }; return; }
+  if (RP.size > 2) return;
   if (RM.step === 'calib') {
     let best = -1, bd = e.pointerType === 'touch' ? 40 : 24;
     RM.pts.forEach((q, i) => { const d = Math.hypot(RM.view.ox + q[0] * RM.view.s - p[0], RM.view.oy + q[1] * RM.view.s - p[1]); if (d < bd) { bd = d; best = i; } });
-    if (best >= 0) { const q = RM.pts[best]; RM.drag = { i: best, p0: p, q0: [...q] }; roomDraw(); }
+    if (best >= 0) { rPush(); const q = RM.pts[best]; RM.drag = { i: best, p0: p, q0: [...q] }; roomDraw(); }
+    else RM.drag = { pan: true, p0: p, v0: { ...RM.view } }; // à côté des ronds : on déplace la photo
   } else if (RM.step === 'place') {
-    const [u, v] = toImg(p); RM.drag = { w0: applyH(RM.Hinv, u, v), offX: RM.offX, bottom: RM.bottom };
+    rPush(); const [u, v] = toImg(p); RM.drag = { w0: applyH(RM.Hinv, u, v), offX: RM.offX, bottom: RM.bottom };
   }
 });
+rcv.addEventListener('wheel', e => { e.preventDefault(); const p = rpos(e); rZoomAt(p[0], p[1], Math.exp(-e.deltaY * .0015)); }, { passive: false });
 rcv.addEventListener('pointermove', e => {
+  if (RP.has(e.pointerId)) RP.set(e.pointerId, rpos(e));
   if (!RM.drag) return; const p = rpos(e);
+  if (RM.drag.pinch) { if (RP.size < 2) return; const [a, b] = [...RP.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], v0 = RM.drag.v0, ns = clamp(v0.s * d / RM.drag.d0, v0.s0 * .8, v0.s0 * 30), f = ns / v0.s;
+    RM.view = { ...v0, s: ns, ox: m[0] - (RM.drag.m0[0] - v0.ox) * f, oy: m[1] - (RM.drag.m0[1] - v0.oy) * f }; roomDraw(); return; }
+  if (RM.drag.pan) { RM.view = { ...RM.drag.v0, ox: RM.drag.v0.ox + p[0] - RM.drag.p0[0], oy: RM.drag.v0.oy + p[1] - RM.drag.p0[1] }; roomDraw(); return; }
   if (RM.step === 'calib') { const d = RM.drag; RM.pts[d.i] = [d.q0[0] + (p[0] - d.p0[0]) / RM.view.s, d.q0[1] + (p[1] - d.p0[1]) / RM.view.s]; }
   else { const [u, v] = toImg(p), w = applyH(RM.Hinv, u, v); RM.offX = Math.round(RM.drag.offX + w[0] - RM.drag.w0[0]); if (!RM.onFloor) { RM.bottom = Math.round(RM.drag.bottom + w[1] - RM.drag.w0[1]); const i = $('#rPanel [data-k="bottom"]'); if (i) i.value = fmt(RM.bottom); } }
   roomDraw();
 });
-const rEnd = () => { if (RM.drag) { RM.drag = null; roomDraw(); } };
+const rEnd = e => { RP.delete(e.pointerId); if (RM.drag && RM.drag.pinch && RP.size) return; if (RM.drag) { const was = RM.drag; RM.drag = null; if (!was.pan && !was.pinch && RM.hist.length && RM.hist[RM.hist.length - 1] === rSnap()) RM.hist.pop(); roomDraw(); rUndoBtn(); } };
 rcv.addEventListener('pointerup', rEnd); rcv.addEventListener('pointercancel', rEnd);
+$('#rUndo').onclick = rUndo; $('#rFit').onclick = () => rFit();
 function roomPanel() {
   const p = $('#rPanel'), bb = bbox(), dims = bb ? `${fmt(bb.x1 - bb.x0)} × ${fmt(bb.y1 - bb.y0)} cm` : '';
   $('#rSave').style.display = RM.step === 'place' ? '' : 'none';
@@ -2459,25 +2545,26 @@ function roomPanel() {
       <div id="rSent" style="margin-top:10px"></div>`;
     sentPhotos();
   } else if (RM.step === 'calib') {
-    p.innerHTML = `<p>Glisse les <b>4 ronds</b> sur les <b>4 coins de la feuille</b>. Une loupe t'aide à viser.</p>
+    p.innerHTML = `<p>Glisse les <b>4 ronds</b> sur les <b>4 coins de la feuille</b>. <b>Zoome à deux doigts</b> sur la feuille pour viser juste : de cette précision dépend toute l'échelle.${RM.small ? ' <b style="color:#b42318">Les ronds sont trop serrés : zoome d\'abord.</b>' : ''}</p>
       <div class="row" style="margin-top:0"><button class="btn${RM.refKind === 'a4' ? ' on' : ''}" data-ref="a4">Feuille A4</button><button class="btn${RM.refKind === 'other' ? ' on' : ''}" data-ref="other">Autre objet</button></div>
       ${RM.refKind === 'other' ? `<div class="grid2" style="margin-top:8px">${field('Largeur (cm)', 'refW', RM.refW)}${field('Hauteur (cm)', 'refH', RM.refH)}</div>` : ''}
       <div class="row"><button class="btn pri" id="rOk">Valider</button><button class="btn" id="rTake">📷 Autre photo</button><button class="btn" id="rPick">🖼</button></div>`;
   } else {
-    p.innerHTML = `<p><b>Glisse le meuble</b> avec le doigt pour le placer.</p>
+    p.innerHTML = verChips() + `<p><b>Glisse le meuble</b> avec le doigt pour le placer. Deux doigts : zoomer.</p>
       <div class="grid2">${field('Bas de la feuille (cm du sol)', 'sheetH', RM.sheetH)}${RM.onFloor ? '' : field('Bas du meuble (cm du sol)', 'bottom', RM.bottom)}</div>
       <div class="row"><button class="btn${RM.onFloor ? ' on' : ''}" id="rFloor">Posé au sol</button><button class="btn${RM.relief ? ' on' : ''}" id="rRelief">Relief</button><button class="btn${RM.books ? ' on' : ''}" id="rBooks">Livres</button></div>
       <div class="row"><button class="btn" id="rRecal">Recaler la feuille</button><button class="btn" id="rTake">📷 Autre photo</button><button class="btn" id="rPick">🖼</button></div>`;
   }
-  const on = (id, f) => { const el = $('#' + id); if (el) el.onclick = f; };
+  bindVerChips(p, () => { roomPanel(); roomDraw(); }); rUndoBtn();
+  const on = (id, f) => { const el = $('#' + id); if (el) el.onclick = () => { if (id !== 'rTake' && id !== 'rPick') rPush(); f(); }; };
   on('rTake', () => { roomMsg('Ouverture de l\'appareil photo…'); $('#rCam').click(); }); on('rPick', () => { roomMsg('Ouverture de la galerie…'); $('#rLib').click(); setTimeout(() => { if (!RM.img && $('#rMsg') && /Ouverture/.test($('#rMsg').textContent)) roomMsg('Pas encore de photo reçue. Si la galerie ne s\'est pas ouverte, ouvre l\'app dans Chrome (raccourci sur l\'écran d\'accueil) plutôt que dans l\'application Claude, puis réessaie.', true); }, 15000); });
-  on('rOk', () => { p.querySelectorAll('input[data-k]').forEach(i => { const v = parseCm(i.value); if (v > 0) RM[i.dataset.k] = v; }); roomCalibrate(); });
+  on('rOk', () => { if (RM.small) toast('Astuce : zoome sur la feuille pour placer les coins plus précisément'); p.querySelectorAll('input[data-k]').forEach(i => { const v = parseCm(i.value); if (v > 0) RM[i.dataset.k] = v; }); roomCalibrate(); });
   p.querySelectorAll('[data-ref]').forEach(b => b.onclick = () => { RM.refKind = b.dataset.ref; roomPanel(); });
   on('rFloor', () => { RM.onFloor = !RM.onFloor; if (!RM.onFloor && !RM.bottom) RM.bottom = 1000; roomPanel(); roomDraw(); });
   on('rRelief', () => { RM.relief = !RM.relief; roomPanel(); roomDraw(); });
   on('rBooks', () => { RM.books = !RM.books; roomPanel(); roomDraw(); });
   on('rRecal', () => { RM.step = 'calib'; roomPanel(); roomDraw(); });
-  p.querySelectorAll('input[data-k]').forEach(i => i.onchange = () => { const v = parseCm(i.value); if (!Number.isFinite(v) || v < 0) { i.value = fmt(RM[i.dataset.k]); return toast('Valeur non comprise'); } RM[i.dataset.k] = v; if (RM.step === 'place') roomDraw(); });
+  p.querySelectorAll('input[data-k]').forEach(i => i.onchange = () => { const v = parseCm(i.value); if (!Number.isFinite(v) || v < 0) { i.value = fmt(RM[i.dataset.k]); return toast('Valeur non comprise'); } rPush(); RM[i.dataset.k] = v; if (RM.step === 'place') roomDraw(); });
   requestAnimationFrame(roomResize);
 }
 async function roomExport() {
@@ -2532,14 +2619,14 @@ function load3() { return new Promise((res, rej) => { if (window.THREE) return r
 function v3Open() { return $('#v3d').style.display === 'flex'; }
 async function open3D() {
   if (!D.boards.length) return toast('Dessine d\'abord un meuble');
-  $('#v3d').style.display = 'flex'; V3.sel = null; panel3();
+  if (!v3Open()) layerOpen('3d'); $('#v3d').style.display = 'flex'; V3.sel = null; panel3();
   $('#v3dMsg').textContent = 'Chargement de la 3D…';
   try { await load3(); } catch { $('#v3dMsg').textContent = 'La 3D n\'a pas pu se charger : vérifie ta connexion.'; return; }
   $('#v3dMsg').textContent = '';
   try { if (!T3) init3(); } catch (e) { $('#v3dMsg').textContent = 'La 3D n\'est pas disponible sur cet appareil.'; return; }
   build3(); resize3(); setView3(V3.view || '34');
 }
-function close3D() { $('#v3d').style.display = 'none'; V3.sel = null; changed(false); }
+function close3D(fromPop) { if (!v3Open()) return; $('#v3d').style.display = 'none'; V3.sel = null; changed(false); if (fromPop !== true) layerClosed(); }
 function woodTex(vertical) {
   const c = document.createElement('canvas'); c.width = 512; c.height = 128; const x = c.getContext('2d');
   x.fillStyle = '#ddb27a'; x.fillRect(0, 0, 512, 128);
@@ -2728,7 +2815,8 @@ function arSetupUI() {
 function panel3() {
   const p = $('#p3d'), j = V3.sel && jointList().find(x => x.key === V3.sel);
   if (!j) {
-    p.innerHTML = `<div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
+    p.innerHTML = verChips() + `<div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
+    bindVerChips(p, () => { build3(); panel3(); });
     arLinkHtml().then(h => { const sl = $('#arSlot'); if (!sl) return; sl.innerHTML = h; if ($('#arSetup')) $('#arSetup').onclick = arSetupUI; });
     if ($('#arEdit')) $('#arEdit').onclick = e => { e.preventDefault(); arSetupUI(); };
     return;
@@ -2748,7 +2836,7 @@ $('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').cl
 
 // ---------- Boutons ----------
 $('#bUndo').onclick = undo; $('#bRedo').onclick = redo; $('#bFit').onclick = fitView;
-$('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
+$('#bVer').onclick = versionsDialog; $('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
 const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs'], ['showScrews', '🔩', 'Équerres et alertes visseuse']];
 function updateEye() { $('#eyeDot').style.display = EYE.some(([k]) => !vis(k)) ? 'block' : 'none'; if ($('#eyeMenu').style.display === 'block') renderEye(); }
 function renderEye() {

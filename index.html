@@ -16,9 +16,12 @@ model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-
 .bar{padding:10px 14px 16px;background:var(--card);border-top:1px solid var(--line);display:flex;flex-direction:column;gap:10px}
 .seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;align-self:flex-start}
 .seg button{border:none;background:#fff;padding:9px 16px;font:inherit}.seg button.on{background:var(--ink);color:#fff}
-#arBtn{border:none;background:var(--acc);color:#fff;font:700 18px inherit;padding:16px;border-radius:14px;width:100%}
+#arBtn{position:absolute;left:12px;right:12px;bottom:12px;border:none;background:var(--acc);color:#fff;font-size:17px;font-weight:700;padding:15px;border-radius:14px;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+header{display:flex;align-items:center;gap:10px}header .t{flex:1;min-width:0}
+#back{border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 12px;font-size:15px;color:var(--ink);flex:none}
+#sz.off{border-color:#d92d20;background:#fff5f4}#sz.off #szV{color:#b42318}
 #note{font-size:13px;color:var(--mute)}
-#sz{position:absolute;top:12px;left:64px;right:12px;display:none;flex-direction:column;gap:6px;background:rgba(255,253,249,.94);border:1px solid var(--line);border-radius:14px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.15);z-index:5}
+#sz{position:absolute;top:12px;left:12px;right:12px;display:none;flex-direction:column;gap:6px;background:rgba(255,253,249,.94);border:1px solid var(--line);border-radius:14px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.15);z-index:5}
 #sz.on{display:flex}
 #sz .r{display:flex;align-items:center;gap:8px}
 #sz button{border:1px solid var(--line);background:#fff;border-radius:10px;font-size:24px;font-weight:700;width:46px;height:42px;flex:none;color:var(--ink);padding:0}
@@ -30,7 +33,7 @@ model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-
 </head>
 <body>
 <div id="app">
-  <header><b id="name">Atelier Meubles</b><span id="dims">Ouvre cette page depuis le bouton « Voir chez moi » de l'app.</span></header>
+  <header><button id="back">← Plan</button><div class="t"><b id="name">Atelier Meubles</b><span id="dims">Ouvre cette page depuis le bouton « Voir chez moi » de l'app.</span></div></header>
   <div style="position:relative;flex:1;display:flex;min-height:0">
     <model-viewer id="mv" camera-controls touch-action="pan-y" shadow-intensity="1" exposure="1" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" ar-placement="floor" camera-orbit="-30deg 72deg auto">
       <button slot="ar-button" id="arBtn">📱 Voir chez moi en vraie grandeur</button>
@@ -40,7 +43,7 @@ model-viewer{position:absolute;inset:0;width:100%;height:100%;background:linear-
   </div>
   <div class="bar">
     <div class="seg"><button data-pl="floor" class="on">Posé au sol</button><button data-pl="wall">Fixé au mur</button></div>
-    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Si la taille ne te semble pas juste dans ta pièce, corrige-la avec − / + en haut (même pendant la caméra) ; touche le pourcentage pour revenir à la vraie grandeur.</div>
+    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Si la taille ne te semble pas juste dans ta pièce, corrige-la avec − / + en haut. La page repart toujours en vraie grandeur (100 %).</div>
   </div>
 </div>
 <script type="module">
@@ -162,8 +165,8 @@ const SZK = 'atelier.ar.scale';
 function setScale(pc, save = true) {
   pc = Math.max(70, Math.min(130, Math.round(pc))); const k = pc / 100;
   $('#mv').scale = `${k} ${k} ${k}`; $('#szS').value = pc;
-  $('#szV').innerHTML = pc === 100 ? `Vraie grandeur<small>${DIM ? `${fmt(DIM.W)} × ${fmt(DIM.H)} cm` : ''}</small>` : `${pc} %<small>touche ici pour revenir à 100 %</small>`;
-  if (save) try { localStorage.setItem(SZK, pc); } catch { }
+  $('#szV').innerHTML = pc === 100 ? `Vraie grandeur<small>${DIM ? `${fmt(DIM.W)} × ${fmt(DIM.H)} cm` : ''}</small>` : `⚠ ${pc} % · pas en vraie grandeur<small>touche ici pour revenir à 100 %</small>`;
+  $('#sz').classList.toggle('off', pc !== 100);
 }
 // les touches sur le panneau ne doivent pas déplacer le meuble pendant la RA
 $('#sz').addEventListener('beforexrselect', e => e.preventDefault());
@@ -182,12 +185,18 @@ $('#szV').onclick = () => setScale(100);
     const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
     blobUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' })); mv.src = blobUrl; $('#msg').textContent = '';
     if (M.wall) setPl('wall');
-    DIM = { W, H }; let pc = 100; try { pc = +localStorage.getItem(SZK) || 100; } catch { }
+    DIM = { W, H }; const pc = 100; try { localStorage.removeItem(SZK); } catch { }
     setScale(pc, false); $('#sz').classList.add('on');
   } catch (e) { $('#msg').textContent = 'Lien illisible : rouvre-le depuis l\'app. (' + (e.message || e) + ')'; }
   mv.addEventListener('ar-status', ev => { if (ev.detail.status === 'failed') $('#note').textContent = 'La réalité augmentée n\'a pas démarré. Il faut Chrome sur un Android compatible ARCore (Services Google Play pour la RA).'; });
   setTimeout(() => { if (!mv.canActivateAR) $('#note').textContent = 'La réalité augmentée n\'est pas disponible ici. Ouvre cette page dans Chrome sur ton téléphone Android (avec « Services Google Play pour la RA »). Tu peux quand même faire tourner le meuble en 3D.'; }, 2500);
 })();
+// retour au plan : ferme cet onglet (ouvert depuis l'app) ou revient en arrière
+$('#back').onclick = () => {
+  if (history.length > 1) { history.back(); return; }
+  window.close();
+  setTimeout(() => { if (location.hostname.endsWith('github.io')) location.href = './app.html'; }, 300);
+};
 function setPl(p) { $('#mv').setAttribute('ar-placement', p); document.querySelectorAll('[data-pl]').forEach(b => b.classList.toggle('on', b.dataset.pl === p)); }
 document.querySelectorAll('[data-pl]').forEach(b => b.onclick = () => setPl(b.dataset.pl));
 </script>
