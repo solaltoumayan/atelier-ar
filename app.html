@@ -1341,6 +1341,7 @@ const WALL_W = 30; // largeur d'une équerre vue de face
 function wallGeom(p) { const r = rect(byId(p.b)); return { cx: r.x0 + p.off, top: r.y0, bot: r.y0 - p.wa, w: p.ww || WALL_W, r }; }
 const wallNum = () => { const ls = parts('murale').map(p => ({ p, g: wallGeom(p) })).sort((a, b) => b.g.top - a.g.top || a.g.cx - b.g.cx); const m = {}; ls.forEach((o, i) => m[o.p.id] = i + 1); return m; };
 function drawWall() {
+  if (!vis('showScrews') && tool !== 'wall' && !(selPart && selPart.k === 'murale')) return;
   const num = wallNum();
   for (const p of parts('murale')) {
     const g = wallGeom(p), on = selPart === p, [ax, ay] = toS(g.cx - g.w / 2, g.top), [bx, by] = toS(g.cx + g.w / 2, g.bot), w = bx - ax, h = by - ay;
@@ -3257,9 +3258,10 @@ const V3 = { yaw: -.55, pitch: .32, dist: 3000, target: null, sel: null, showScr
 let T3 = null;
 function load3() { return new Promise((res, rej) => { if (window.THREE) return res(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 function v3Open() { return $('#v3d').style.display === 'flex'; }
+const brShown = () => v3Open() ? V3.showScrews : vis('showScrews'); // l'œil « Équerres » cache aussi les équerres murales
 async function open3D() {
   if (!D.boards.length) return toast('Dessine d\'abord un meuble');
-  if (!v3Open()) layerOpen('3d'); $('#v3d').style.display = 'flex'; V3.sel = null; panel3();
+  if (!v3Open()) layerOpen('3d'); V3.showScrews = vis('showScrews'); $('#v3Screw').classList.toggle('on', V3.showScrews); $('#v3d').style.display = 'flex'; V3.sel = null; panel3();
   $('#v3dMsg').textContent = 'Chargement de la 3D…';
   try { await load3(); } catch { $('#v3dMsg').textContent = 'La 3D n\'a pas pu se charger : vérifie ta connexion.'; return; }
   $('#v3dMsg').textContent = '';
@@ -3449,7 +3451,7 @@ function partBoxes() {
   const out = [], t = S().t;
   for (const p of parts('dos')) { const o = outerRect(p.a), e = p.mat === 'pin' ? t : (p.ep || 5); out.push([o.x0, o.y0, -e, o.x1, o.y1, 0, p.mat === 'pin' ? 'w' : '#cfb489']); }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); out.push([g.x0, g.y0, 0, g.x1, g.y1, g.L, '#c99a62']); }
-  for (const p of parts('murale')) { const g = wallGeom(p); const c = brTint(p.col)[1]; out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 2.5, c, 'metal']); out.push([g.cx - g.w / 2, g.top - 2.5, 0, g.cx + g.w / 2, g.top, p.wl, c, 'metal']); }
+  if (brShown()) for (const p of parts('murale')) { const g = wallGeom(p); const c = brTint(p.col)[1]; out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 2.5, c, 'metal']); out.push([g.cx - g.w / 2, g.top - 2.5, 0, g.cx + g.w / 2, g.top, p.wl, c, 'metal']); }
   for (const p of parts('pied')) {
     const g = legGeom(p), d = depth(byId(p.b)), zs = p.pair === false ? [d / 2] : [d - p.ins - g.w / 2, p.ins + g.w / 2], col = p.src === 'pin' ? 'w' : p.shape === 'epingle' ? '#2a2a2a' : '#c8955a';
     const shape = p.src === 'pin' ? 'box' : p.shape === 'rond' ? 'cyl' : p.shape === 'compas' ? 'cone' : p.shape === 'epingle' ? 'pin' : 'box';
@@ -3508,12 +3510,12 @@ function panel3() {
 }
 $('#b3D').onclick = open3D; $('#v3Back').onclick = close3D;
 document.querySelectorAll('[data-v3]').forEach(b => b.onclick = () => T3 && setView3(b.dataset.v3));
-$('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').classList.toggle('on', V3.showScrews); if (!V3.showScrews) V3.sel = null; if (T3) buildScrews3(); panel3(); };
+$('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').classList.toggle('on', V3.showScrews); if (!V3.showScrews) V3.sel = null; if (T3) { if (parts('murale').length) build3(); else buildScrews3(); } panel3(); };
 
 // ---------- Boutons ----------
 $('#bUndo').onclick = undo; $('#bRedo').onclick = redo; $('#bFit').onclick = fitView;
 $('#bVer').onclick = versionsDialog; $('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
-const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs'], ['showScrews', '🔩', 'Équerres et alertes visseuse'], ['showTitle', '✒️', 'Titre du meuble']];
+const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs'], ['showScrews', '🔩', 'Équerres (murales et d\'assemblage), vis et alertes'], ['showTitle', '✒️', 'Titre du meuble']];
 function updateEye() { $('#eyeDot').style.display = EYE.some(([k]) => !vis(k)) ? 'block' : 'none'; if ($('#eyeMenu').style.display === 'block') renderEye(); }
 function renderEye() {
   const m = $('#eyeMenu');
