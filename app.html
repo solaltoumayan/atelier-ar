@@ -1246,8 +1246,8 @@ function brSvg(m, big) {
 }
 const brDesc = m => `${m.type === 'mur' ? `mur ${m.a} × étagère ${m.l}` : `${m.a} × ${m.l}`} mm · larg. ${m.wq ? '≈' : ''}${m.w}${m.lm ? '' : ` · ${m.h} trou${m.h > 1 ? 's' : ''}/aile`}${m.kg ? ` · jusqu'à ${m.kg} kg` : ''}${m.sc ? ` · vis ${esc(m.sc)}` : ''}${m.ref ? ` · réf. ${m.ref}` : ''}`;
 // rangée de choix de modèle (panneaux)
-function brPickHtml(type, curId) {
-  const fav = brFav(), all = brAll().filter(m => m.type === type), L = [...all.filter(m => fav.has(m.id)), ...all.filter(m => !fav.has(m.id) && !m.lm)];
+function brPickHtml(type, curId) { // au mur on peut aussi prendre une petite équerre d'assemblage en soutien
+  const fav = brFav(), all = brAll().filter(m => m.type === type || (type === 'mur' && m.type === 'asm' && (fav.has(m.id) || !m.lm))).sort((a, b) => (a.type === type ? 0 : 1) - (b.type === type ? 0 : 1)), L = [...all.filter(m => fav.has(m.id)), ...all.filter(m => !fav.has(m.id) && !m.lm)];
   const cur = brModel(curId); if (cur && !L.includes(cur)) L.push(cur);
   return `<div class="seg" style="flex-wrap:wrap;margin-top:6px">${L.map(m => `<button data-brm="${m.id}" class="${curId === m.id ? 'on' : ''}" style="display:flex;align-items:center;gap:5px"><span style="background:#fffdf8;border-radius:5px;display:inline-flex">${brSvg(m)}</span>${fav.has(m.id) ? '<span style="color:#e8a400">★</span>' : ''}${esc(m.name)}</button>`).join('')}<button data-brlm="${type}">🏬 Leroy Merlin</button><button data-brnew="${type}">＋ Mon modèle</button><button data-brlib="${type}">⚙</button></div>`;
 }
@@ -1255,8 +1255,9 @@ function brPickBind(P, type, pick, back) {
   const pk = m => { closeModal(); pick(m); };
   P.querySelectorAll('[data-brm]').forEach(x => x.onclick = () => pick(brModel(x.dataset.brm)));
   P.querySelectorAll('[data-brnew]').forEach(x => x.onclick = () => brModelForm(type, null, m => { closeModal(); pick(m); }));
-  P.querySelectorAll('[data-brlm]').forEach(x => x.onclick = () => brModelsDialog(back, { type, tab: 'lm', pick: pk }));
-  P.querySelectorAll('[data-brlib]').forEach(x => x.onclick = () => brModelsDialog(back, { type, pick: pk }));
+  const any = type === 'mur';
+  P.querySelectorAll('[data-brlm]').forEach(x => x.onclick = () => brModelsDialog(back, { type, any, tab: 'lm', pick: pk }));
+  P.querySelectorAll('[data-brlib]').forEach(x => x.onclick = () => brModelsDialog(back, { type, any, pick: pk }));
 }
 // catalogue : favoris, mes modèles, Leroy Merlin
 function brModelsDialog(after, opt = {}) {
@@ -1264,14 +1265,14 @@ function brModelsDialog(after, opt = {}) {
   const sh = opt.show || opt.type, tab = opt.tab || (brAll().some(m => fav.has(m.id) && (!sh || m.type === sh)) ? 'fav' : mine.some(m => !sh || m.type === sh) ? 'mine' : 'lm');
   const src = { fav: brAll().filter(m => fav.has(m.id)), mine, lm: LM_BR }[tab];
   const row = m => `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)"><span style="background:#fffdf8;border-radius:6px;display:inline-flex">${brSvg(m)}</span><div style="flex:1;min-width:0"><b>${esc(m.name)}</b>${m.lm ? ' <span style="font-size:10px;color:#fff;background:#78be20;border-radius:4px;padding:1px 4px">LM</span>' : ''}${used[m.id] ? ` <span style="font-size:11px;color:var(--mute)">· ${used[m.id]} dans ce meuble</span>` : ''}<div style="font-size:12px;color:var(--mute)">${brDesc(m)}${m.url ? ` · <a href="${m.url}" target="_blank" rel="noopener" style="color:var(--acc)">voir ↗</a>` : ''}</div></div>
-    <button class="btn" data-fav="${m.id}" title="Favori" style="font-size:18px;color:${fav.has(m.id) ? '#e8a400' : '#b8ab98'}">${fav.has(m.id) ? '★' : '☆'}</button><button class="btn" data-bre="${m.id}" title="${m.lm ? 'Copier dans mes modèles pour l\'ajuster' : 'Modifier'}">${m.lm ? '⧉' : '✎'}</button>${opt.pick && m.type === opt.type ? `<button class="btn pri" data-pick="${m.id}">Choisir</button>` : ''}</div>`;
+    <button class="btn" data-fav="${m.id}" title="Favori" style="font-size:18px;color:${fav.has(m.id) ? '#e8a400' : '#b8ab98'}">${fav.has(m.id) ? '★' : '☆'}</button><button class="btn" data-bre="${m.id}" title="${m.lm ? 'Copier dans mes modèles pour l\'ajuster' : 'Modifier'}">${m.lm ? '⧉' : '✎'}</button>${opt.pick && (m.type === opt.type || opt.any) ? `<button class="btn pri" data-pick="${m.id}">Choisir</button>` : ''}</div>`;
   const show = opt.show || opt.type, types = show ? [show] : ['mur', 'asm'];
   const body = types.map(t => { const L = src.filter(m => m.type === t); return `${types.length > 1 ? `<div class="sec">${BR_TYPE[t]}</div>` : ''}${L.map(row).join('') || `<div style="color:var(--mute);font-size:13px;margin:6px 0">${tab === 'fav' ? 'Aucun favori : touche ☆ sur une équerre pour la garder ici.' : 'Aucun modèle pour l\'instant.'}</div>`}${tab === 'mine' ? `<div class="row"><button class="btn" data-brn="${t}">＋ Nouveau modèle</button></div>` : ''}`; }).join('');
   openModal(`<h2>Équerres<button class="btn" data-close>✕</button></h2>
     <div class="seg" style="margin-bottom:6px">${[['mur', '📐 Murales (mur)'], ['asm', '🔩 Assemblage (petites)']].map(([k, l]) => `<button data-show="${k}" class="${show === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div class="seg" style="margin-bottom:6px">${[['fav', '⭐ Favoris'], ['mine', 'Mes modèles'], ['lm', '🏬 Leroy Merlin']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${tab === 'lm' ? '<div style="font-size:12px;color:var(--mute);line-height:1.4">Équerres courantes de leroymerlin.fr (relevé du 13/11/2026). Vérifie les mesures en magasin ; « ≈ » = largeur estimée. ⧉ = la copier dans « Mes modèles » pour l\'ajuster.</div>' : ''}
-    ${opt.pick && show && show !== opt.type ? `<div style="font-size:12px;color:#b54708;line-height:1.4;margin:4px 0">${show === 'asm' ? 'Ces petites équerres se posent entre deux planches : 🔨 Construire → 🔩 Vis & équerres.' : 'Ces équerres se posent au mur : 🔨 Construire → 📐 Équerres murales.'} Ici tu peux les mettre en ☆ favoris.</div>` : ''}
+    ${opt.pick && show && show !== opt.type && !opt.any ? `<div style="font-size:12px;color:#b54708;line-height:1.4;margin:4px 0">${show === 'asm' ? 'Ces petites équerres se posent entre deux planches : 🔨 Construire → 🔩 Vis & équerres.' : 'Ces équerres se posent au mur : 🔨 Construire → 📐 Équerres murales.'} Ici tu peux les mettre en ☆ favoris.</div>` : ''}
     ${tab === 'lm' ? '' : '<div style="font-size:12px;color:var(--mute);line-height:1.4">Aucune équerre n\'est posée tant que tu ne l\'as pas choisie et placée toi-même.</div>'}${body}`);
   const box = $('#mbox'), again = o => brModelsDialog(after, { ...opt, ...o }), back = () => { again({ tab: 'mine' }); if (after) after(); };
   box.querySelectorAll('[data-tab]').forEach(x => x.onclick = () => again({ tab: x.dataset.tab }));
@@ -1344,7 +1345,7 @@ function wallTap(wx, wy) {
   for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (wx < r.x0 - 2 || wx > r.x1 + 2) continue; const d = r.y0 - wy; if (d < -30 / Vw.s || d > 500) continue; if (d < bd) { bd = d; best = b; } }
   if (!best) return toast('Touche juste sous l\'étagère, là où tu veux l\'équerre');
   const m = brModel(BRCUR.mur);
-  if (!m) { if (!brModels().some(x => x.type === 'mur')) { toast('Crée d\'abord ton modèle d\'équerre'); brModelForm('mur', null, mm => { closeModal(); BRCUR.mur = mm.id; buildHelp(); }); } else { toast('Choisis d\'abord ton modèle d\'équerre, en bas'); buildHelp(); } return; }
+  if (!m) { if (!brModels().length && !brFav().size) { toast('Crée d\'abord ton modèle d\'équerre'); brModelForm('mur', null, mm => { closeModal(); BRCUR.mur = mm.id; buildHelp(); }); } else { toast('Choisis d\'abord ton modèle d\'équerre, en bas'); buildHelp(); } return; }
   const r = rect(best), hw = (m.w || WALL_W) / 2;
   pushUndo(); const off = clamp(Math.round(wx - r.x0), hw, best.L - hw), p = { id: uid(), k: 'murale', b: best.id, off }; wallApply(p, m);
   D.parts = D.parts || []; D.parts.push(p); selPart = p; panelOn = true; changed(); toast(`Équerre à ${fmt(off)} cm du bout gauche`);
@@ -1352,6 +1353,7 @@ function wallTap(wx, wy) {
 function wallPanelHtml(p) {
   const b = byId(p.b), g = wallGeom(p), num = wallNum()[p.id], warn = wallWarn(b), dpt = depth(b);
   return `<div style="font-size:12px;color:var(--mute);line-height:1.45">Équerre n° <b style="color:#c92a2a">${num}</b> sous <span class="tag">${boardInfo()[b.id].code}</span> · aile au mur ${fmt(p.wa)} cm, sous l'étagère ${fmt(p.wl)} cm${p.wl > dpt ? ' <b style="color:#b42318">(dépasse de l\'étagère)</b>' : ''}. Glisse-la pour la déplacer.</div>
+    ${(() => { const n = parts('murale').filter(q => q.b === p.b).length; return `<div style="font-size:12px;font-weight:700;margin:8px 0 0">Sur cette étagère (${n} équerre${n > 1 ? 's' : ''})</div><div class="row" style="margin-top:4px"><button class="btn" id="wCen">⊙ Centrer${n > 1 ? ' le groupe' : ''}</button>${n > 1 ? '<button class="btn" id="wSpread">↔ Répartir également</button>' : ''}</div>`; })()}
     <div class="grid2" style="margin-top:8px">${field('Depuis le bout gauche (cm)', 'woff', p.off)}${field('Depuis le bout droit (cm)', 'woffR', b.L - p.off)}</div>
     <div style="font-size:12px;font-weight:700;margin:8px 0 0">Modèle${p.mn ? ` : ${esc(p.mn)}` : ` : ${p.wa} × ${p.wl} mm`}</div>
     ${brPickHtml('mur', p.m)}
@@ -1364,6 +1366,9 @@ function wallPanelBind(P, p, set) {
   brPickBind(P, 'mur', m => { if (!m) return; BRCUR.mur = m.id; set(() => wallApply(p, m)); }, () => changed(false));
   $('#wSym').onclick = () => set(() => { const q = { ...p, id: uid(), off: b.L - p.off }; if (Math.abs(q.off - p.off) < 5) return toast('Elle est déjà au milieu'); D.parts.push(q); selPart = q; });
   $('#wAll').onclick = () => set(() => { const m = brModel(p.m); for (const q of parts('murale')) { if (m) wallApply(q, m); else { q.wa = p.wa; q.wl = p.wl; q.ww = p.ww; q.col = p.col; } } toast('Toutes les équerres murales ont ce modèle'); });
+  const sib = () => parts('murale').filter(q => q.b === p.b).sort((a, c) => a.off - c.off), hwOf = q => (q.ww || WALL_W) / 2;
+  $('#wCen').onclick = () => set(() => { const L = sib(), lo = L[0].off, hi = L[L.length - 1].off, d = Math.round(b.L / 2 - (lo + hi) / 2); for (const q of L) q.off = clamp(q.off + d, hwOf(q), b.L - hwOf(q)); toast(L.length > 1 ? 'Groupe centré sur l\'étagère' : `Équerre au milieu : ${fmt(b.L / 2)} cm`); });
+  if ($('#wSpread')) $('#wSpread').onclick = () => set(() => { const L = sib(), n = L.length; L.forEach((q, i) => q.off = clamp(Math.round(b.L * (i + .5) / n), hwOf(q), b.L - hwOf(q))); toast(`${n} équerres : ${fmt(b.L / (2 * n))} cm des bouts, ${fmt(b.L / n)} cm entre elles`); });
   $('#wPlan').onclick = () => { debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 50); };
 }
 // ---- plan de pose ----
