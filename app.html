@@ -2493,7 +2493,7 @@ async function saveFile(name, data) {
 // ---------- Dans ma pièce : le meuble à l'échelle sur une photo ----------
 // Une feuille de taille connue (A4) collée au mur donne l'échelle et la perspective du mur (homographie).
 // On en déduit la caméra (focale estimée) pour dessiner le meuble en relief, collé au mur.
-const RM = { img: null, iw: 0, ih: 0, step: 'start', pts: null, refKind: 'a4', refW: 210, refH: 297, Hm: null, Hinv: null, cam: null, sheetH: 1000, onFloor: true, bottom: 0, offX: null, books: true, relief: true, view: null, drag: null, hist: [] };
+const RM = { wantFree: true, img: null, iw: 0, ih: 0, step: 'start', pts: null, refKind: 'a4', refW: 210, refH: 297, Hm: null, Hinv: null, cam: null, sheetH: 1000, onFloor: true, bottom: 0, offX: null, books: true, relief: true, view: null, drag: null, hist: [] };
 const rcv = $('#rcv'), rx = rcv.getContext('2d');
 function rSnap() { return JSON.stringify({ pts: RM.pts, offX: RM.offX, bottom: RM.bottom, sheetH: RM.sheetH, onFloor: RM.onFloor, step: RM.step, refKind: RM.refKind, refW: RM.refW, refH: RM.refH, relief: RM.relief, books: RM.books, free: RM.free ? { ...RM.free, dirty: undefined } : null }); }
 function rPush() { const s_ = rSnap(); if (RM.hist[RM.hist.length - 1] !== s_) { RM.hist.push(s_); if (RM.hist.length > 80) RM.hist.shift(); } rUndoBtn(); }
@@ -2507,7 +2507,7 @@ function rUndo() {
 }
 function openRoom() {
   if (!D.boards.length) return toast('Dessine d\'abord un meuble');
-  if (!roomOpen()) layerOpen('room'); $('#room').style.display = 'flex'; RM.step = RM.img ? (RM.Hm ? 'place' : 'calib') : 'start'; roomPanel(); roomResize();
+  if (!roomOpen()) layerOpen('room'); $('#room').style.display = 'flex'; RM.step = RM.img ? (RM.wantFree && RM.free ? 'free' : RM.Hm ? 'place' : 'calib') : 'start'; roomPanel(); roomResize(); if (RM.step === 'free') { RM.free.dirty = true; freeRender(); }
 }
 function closeRoom(fromPop) { if (!roomOpen()) return; $('#room').style.display = 'none'; if (fromPop !== true) layerClosed(); }
 function roomOpen() { return $('#room').style.display === 'flex'; }
@@ -2546,6 +2546,7 @@ async function roomLoad(file) {
     const cw = RM.iw / 2, ch = RM.ih / 2, a = Math.min(RM.iw, RM.ih) * .1;
     RM.pts = [[cw - a * .7, ch + a], [cw + a * .7, ch + a], [cw + a * .7, ch - a], [cw - a * .7, ch - a]];
     RM.Hm = null; RM.offX = null; RM.hist = []; RM.step = 'calib'; roomMsg(''); roomPanel(); roomResize(); rUndoBtn();
+    if (RM.wantFree) { RM.free = null; freeStart(); }
   };
   const fail = () => { const heic = /hei[cf]/i.test(file.type) || /\.hei[cf]$/i.test(file.name || ''); roomMsg(heic ? 'Cette photo est au format HEIC, que le navigateur ne lit pas. Dans l\'appareil photo, passe le format en JPEG, ou fais une capture d\'écran de la photo et choisis-la.' : `Photo illisible (${file.type || 'format inconnu'}). Essaie une autre photo en JPEG ou PNG.`, true); };
   // 1) décodage moderne (respecte l'orientation du téléphone)
@@ -2715,7 +2716,7 @@ function roomPanel() {
       <label class="f" style="margin:4px 0">Rotation <b id="fYawV">${Math.round(F.yaw)}°</b><input type="range" id="fYaw" min="-180" max="180" step="1" value="${F.yaw}"></label>
       <label class="f" style="margin:4px 0">Hauteur du regard <b id="fPitV">${Math.round(F.pitch)}°</b><input type="range" id="fPit" min="-15" max="60" step="1" value="${F.pitch}"></label>
       <div class="grid2"><label class="f" style="margin:4px 0">Taille<input type="range" id="fK" min="-100" max="100" step="1" value="0"></label><label class="f" style="margin:4px 0">Lumière<input type="range" id="fL" min="50" max="150" step="1" value="${Math.round(F.light * 100)}"></label></div>
-      <div class="row"><button class="btn" id="fMir">↔ Regarder de l'autre côté</button><button class="btn" id="fCal">📏 Caler avec une feuille</button><button class="btn pri" id="fOk">✓ Valider l'image</button></div>`;
+      <div class="row"><button class="btn" id="fMir">↔ Regarder de l'autre côté</button><button class="btn" id="fNew">🖼 Autre photo</button><button class="btn" id="fCal">📏 Caler avec une feuille</button><button class="btn pri" id="fOk">✓ Valider l'image</button></div>`;
     bindVerChips(p, () => { RM.free.dirty = true; roomPanel(); freeRender(); }); rUndoBtn();
     const sl = (id, f) => { const el = $('#' + id); el.onpointerdown = () => rPush(); el.oninput = () => f(+el.value); };
     sl('fYaw', v => { F.yaw = v; $('#fYawV').textContent = v + '°'; freeSoon(); });
@@ -2723,12 +2724,13 @@ function roomPanel() {
     let k0 = F.k; $('#fK').onpointerdown = () => { rPush(); k0 = F.k; }; $('#fK').oninput = () => { F.k = k0 * Math.pow(2, +$('#fK').value / 100); roomDraw(); }; $('#fK').onchange = () => { $('#fK').value = 0; k0 = F.k; };
     sl('fL', v => { F.light = v / 100; roomDraw(); });
     $('#fMir').onclick = () => { rPush(); F.yaw = -F.yaw; roomPanel(); freeRender(); };
-    $('#fCal').onclick = () => { RM.step = 'calib'; roomPanel(); roomDraw(); };
+    $('#fNew').onclick = () => { RM.img = null; RM.step = 'start'; roomPanel(); roomDraw(); };
+    $('#fCal').onclick = () => { RM.wantFree = false; RM.step = 'calib'; roomPanel(); roomDraw(); };
     $('#fOk').onclick = () => { freeExport(); toast('Image enregistrée'); };
     return;
   }
   if (RM.step === 'start') {
-    p.innerHTML = `<p><b>1.</b> Scotche une <b>feuille A4</b> bien à plat sur le mur, à peu près là où ira le meuble.<br><b>2.</b> Recule et prends le mur en photo, feuille bien visible, le plus de face possible.<br><b>3.</b> Tu toucheras les 4 coins de la feuille : l'app en déduit l'échelle et la perspective.<br><span style="color:var(--mute)">Pas de feuille ? Prends juste la photo : tu placeras le meuble à la main.</span></p>
+    p.innerHTML = `<p><b>1.</b> Scotche une <b>feuille A4</b> bien à plat sur le mur, à peu près là où ira le meuble.<br><b>2.</b> Recule et prends le mur en photo, feuille bien visible, le plus de face possible.<br><b>3.</b> Tu toucheras les 4 coins de la feuille : l'app en déduit l'échelle et la perspective.</p>`.replace('<p>', `<div class="seg" style="display:flex;margin-bottom:8px"><button style="flex:1" data-way="free" class="${RM.wantFree ? 'on' : ''}">✋ À la main (sans feuille)</button><button style="flex:1" data-way="a4" class="${RM.wantFree ? '' : 'on'}">📏 Avec une feuille A4</button></div>` + (RM.wantFree ? '<p style="display:none">' : '<p>')) + `${RM.wantFree ? '<p>Prends ou choisis une photo de ta pièce : ton meuble apparaît en 3D dessus, tu le déplaces, le tournes et l\'agrandis au doigt, puis tu valides l\'image.</p>' : ''}
       <div class="row"><button class="btn pri" id="rTake">📷 Prendre la photo</button><button class="btn" id="rPick">🖼 Choisir une photo</button></div>
       <div id="rSent" style="margin-top:10px"></div>`;
     sentPhotos();
@@ -2748,6 +2750,7 @@ function roomPanel() {
   const on = (id, f) => { const el = $('#' + id); if (el) el.onclick = () => { if (id !== 'rTake' && id !== 'rPick') rPush(); f(); }; };
   on('rTake', () => { roomMsg('Ouverture de l\'appareil photo…'); $('#rCam').click(); }); on('rPick', () => { roomMsg('Ouverture de la galerie…'); $('#rLib').click(); setTimeout(() => { if (!RM.img && $('#rMsg') && /Ouverture/.test($('#rMsg').textContent)) roomMsg('Pas encore de photo reçue. Si la galerie ne s\'est pas ouverte, ouvre l\'app dans Chrome (raccourci sur l\'écran d\'accueil) plutôt que dans l\'application Claude, puis réessaie.', true); }, 15000); });
   on('rFree', () => freeStart());
+  p.querySelectorAll('[data-way]').forEach(b => b.onclick = () => { RM.wantFree = b.dataset.way === 'free'; roomPanel(); });
   on('rOk', () => { if (RM.small) toast('Astuce : zoome sur la feuille pour placer les coins plus précisément'); p.querySelectorAll('input[data-k]').forEach(i => { const v = parseCm(i.value); if (v > 0) RM[i.dataset.k] = v; }); roomCalibrate(); });
   p.querySelectorAll('[data-ref]').forEach(b => b.onclick = () => { RM.refKind = b.dataset.ref; roomPanel(); });
   on('rFloor', () => { RM.onFloor = !RM.onFloor; if (!RM.onFloor && !RM.bottom) RM.bottom = 1000; roomPanel(); roomDraw(); });
@@ -3068,8 +3071,9 @@ function arSetupUI() {
 function panel3() {
   const p = $('#p3d'), j = V3.sel && jointList().find(x => x.key === V3.sel);
   if (!j) {
-    p.innerHTML = verChips() + `<div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
+    p.innerHTML = verChips() + `<div class="row" style="margin:0 0 6px"><button class="btn" id="v3Photo" style="flex:1">🖼 Incruster dans une photo</button></div><div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
     bindVerChips(p, () => { build3(); panel3(); });
+    $('#v3Photo').onclick = () => { close3D(); RM.wantFree = true; openRoom(); if (RM.img) { RM.free = RM.free || null; freeStart(); } };
     arLinkHtml().then(h => { const sl = $('#arSlot'); if (!sl) return; sl.innerHTML = h; if ($('#arSetup')) $('#arSetup').onclick = arSetupUI; });
     if ($('#arEdit')) $('#arEdit').onclick = e => { e.preventDefault(); arSetupUI(); };
     return;
