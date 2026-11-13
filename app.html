@@ -1375,7 +1375,7 @@ function wallTap(wx, wy) {
 function wallPanelHtml(p) {
   const b = byId(p.b), g = wallGeom(p), num = wallNum()[p.id], warn = wallWarn(b), dpt = depth(b);
   return `<div style="font-size:12px;color:var(--mute);line-height:1.45">Équerre n° <b style="color:#c92a2a">${num}</b> sous <span class="tag">${boardInfo()[b.id].code}</span> · aile au mur ${fmt(p.wa)} cm, sous l'étagère ${fmt(p.wl)} cm${p.wl > dpt ? ' <b style="color:#b42318">(dépasse de l\'étagère)</b>' : ''}. Glisse-la pour la déplacer.</div>
-    ${(() => { const n = parts('murale').filter(q => q.b === p.b).length; return `<div style="font-size:12px;font-weight:700;margin:8px 0 0">Sur cette étagère (${n} équerre${n > 1 ? 's' : ''})</div><div class="row" style="margin-top:4px"><button class="btn" id="wCen">⊙ Centrer${n > 1 ? ' le groupe' : ''}</button>${n > 1 ? '<button class="btn" id="wSpread">↔ Répartir également</button>' : ''}</div>`; })()}
+    ${(() => { const n = parts('murale').filter(q => q.b === p.b).length; return `<div style="font-size:12px;font-weight:700;margin:8px 0 0">Sur cette étagère (${n} équerre${n > 1 ? 's' : ''})</div><div class="row" style="margin-top:4px"><button class="btn" id="wCen">⊙ Centrer${n > 1 ? ' le groupe' : ''}</button>${n > 1 ? '<button class="btn" id="wSpread">↔ Répartir également</button>' : ''}</div>${parts('murale').length > n ? '<div class="row" style="margin-top:4px"><button class="btn" id="wSpreadAll">↔ Répartir toutes les étagères</button></div>' : ''}`; })()}
     <div class="grid2" style="margin-top:8px">${field('Depuis le bout gauche (cm)', 'woff', p.off)}${field('Depuis le bout droit (cm)', 'woffR', b.L - p.off)}</div>
     <div style="font-size:12px;font-weight:700;margin:8px 0 0">Modèle${p.mn ? ` : ${esc(p.mn)}` : ` : ${p.wa} × ${p.wl} mm`}</div>
     ${brPickHtml('mur', p.m)}
@@ -1392,7 +1392,8 @@ function wallPanelBind(P, p, set) {
   wallTypeBind(P, () => changed(false));
   const sib = () => parts('murale').filter(q => q.b === p.b).sort((a, c) => a.off - c.off), hwOf = q => (q.ww || WALL_W) / 2;
   $('#wCen').onclick = () => set(() => { const L = sib(), lo = L[0].off, hi = L[L.length - 1].off, d = Math.round(b.L / 2 - (lo + hi) / 2); for (const q of L) q.off = clamp(q.off + d, hwOf(q), b.L - hwOf(q)); toast(L.length > 1 ? 'Groupe centré sur l\'étagère' : `Équerre au milieu : ${fmt(b.L / 2)} cm`); });
-  if ($('#wSpread')) $('#wSpread').onclick = () => set(() => { const L = sib(), n = L.length; L.forEach((q, i) => q.off = clamp(Math.round(b.L * (i + .5) / n), hwOf(q), b.L - hwOf(q))); toast(`${n} équerres : ${fmt(b.L / (2 * n))} cm des bouts, ${fmt(b.L / n)} cm entre elles`); });
+  if ($('#wSpread')) $('#wSpread').onclick = () => set(() => { const o = wallSpread(b); toast(o.zones > 1 ? `${o.n} équerres réparties entre les montants` : `${o.n} équerres réparties régulièrement`); });
+  if ($('#wSpreadAll')) $('#wSpreadAll').onclick = () => set(() => { const o = wallSpreadAll(); toast(`${o.n} équerres réparties sur ${o.s} étagère${o.s > 1 ? 's' : ''}`); });
   $('#wPlan').onclick = () => { debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 50); };
 }
 // ---- Fixations des équerres murales : vis côté bois, chevilles + vis côté mur ----
@@ -1436,6 +1437,29 @@ function wallFixList() {
   const ord = { mur: 0, bois: 1, outil: 2 };
   return [...g.entries()].map(([txt, o]) => ({ txt, q: o.once ? 1 : o.q, side: o.side })).sort((x, y) => ord[x.side] - ord[y.side]);
 }
+// ---- répartition des équerres murales : régulière, en évitant les montants posés sous l'étagère ----
+function wallSegs(b) { // zones libres sous l'étagère (en x absolu), hors montants qui partent du dessous
+  const r = rect(b); let segs = [[r.x0, r.x1]];
+  for (const v of D.boards) {
+    if (v === b || v.o !== 'v') continue; const q = rect(v);
+    if (Math.abs(q.y1 - r.y0) > 3 || q.x1 <= r.x0 || q.x0 >= r.x1) continue;
+    segs = segs.flatMap(([a, c]) => q.x1 <= a || q.x0 >= c ? [[a, c]] : [[a, q.x0], [q.x1, c]].filter(([u, w]) => w - u > 1));
+  }
+  return segs;
+}
+function wallSpread(b) {
+  const L = parts('murale').filter(q => q.b === b.id).sort((x, y) => x.off - y.off), n = L.length; if (!n) return null;
+  const r = rect(b), hw = Math.max(...L.map(q => (q.ww || WALL_W) / 2)), gap = 3;
+  let segs = wallSegs(b).map(([A, C]) => [A + hw + gap, C - hw - gap, A, C]).filter(([a, c]) => c >= a);
+  if (!segs.length) segs = [[r.x0 + hw, r.x1 - hw, r.x0, r.x1]];
+  // chaque position idéale (écarts égaux) va dans la zone libre la plus proche, puis on répartit dans chaque zone
+  const ideal = L.map((_, i) => r.x0 + b.L * (i + .5) / n), cnt = segs.map(() => 0);
+  for (const x of ideal) { let bi = 0, bd = 1e9; segs.forEach(([a, c], k) => { const d = x < a ? a - x : x > c ? x - c : 0; if (d < bd) { bd = d; bi = k; } }); cnt[bi]++; }
+  const pos = []; segs.forEach(([a, c, A, C], k) => { const m = cnt[k]; for (let j = 0; j < m; j++) pos.push(clamp(A + (C - A) * (j + .5) / m, a, c)); }); // écarts égaux dans chaque zone, demi-écart aux bords
+  pos.sort((x, y) => x - y); L.forEach((q, i) => q.off = Math.round(pos[i] - r.x0));
+  return { n, zones: segs.length };
+}
+function wallSpreadAll() { let n = 0, s = 0; for (const b of D.boards) { const o = wallSpread(b); if (o) { n += o.n; s++; } } return { n, s }; }
 // ---- plan de pose ----
 function wallPlan() {
   const ws = parts('murale'); if (!ws.length) return null;
@@ -1689,7 +1713,8 @@ function buildHelp() {
   P.style.display = 'block';
   const bt = k === 'murale' ? 'mur' : k === 'joint' ? 'asm' : null; if (bt) brAdopt();
   const pick = bt ? `<div style="font-size:13px;font-weight:700;margin-top:8px">${bt === 'mur' ? '1. Choisis ton équerre' : 'Équerre à poser (facultatif)'}</div>${brAll().some(m => m.type === bt && (!m.lm || brFav().has(m.id))) ? '' : `<div style="font-size:12px;color:var(--mute)">Pioche dans 🏬 Leroy Merlin (touche ☆ pour tes favoris) ou crée ton modèle avec tes mesures.</div>`}${brPickHtml(bt, BRCUR[bt])}${bt === 'mur' ? `<div style="font-size:13px;font-weight:700;margin-top:8px">2. Touche sous l'étagère pour la poser</div>` : ''}` : '';
-  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' || k === 'porte' || k === 'murale' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>${pick}`;
+  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' || k === 'porte' || k === 'murale' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3>${k === 'murale' && parts('murale').length ? `<div class="row" style="margin:0 0 2px"><button class="btn pri" id="hSpreadAll">↔ Répartir toutes les équerres</button></div><div style="font-size:12px;color:var(--mute);line-height:1.4">Pose-les au hasard : l'app les espace régulièrement sur chaque étagère, sans tomber sur un montant.</div>` : `<div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>`}${pick}`;
+  if ($('#hSpreadAll')) $('#hSpreadAll').onclick = () => { pushUndo(); const o = wallSpreadAll(); changed(); buildHelp(); toast(`${o.n} équerres réparties sur ${o.s} étagère${o.s > 1 ? 's' : ''}`); };
   if (bt) brPickBind(P, bt, m => { if (!m) return; BRCUR[bt] = BRCUR[bt] === m.id ? null : m.id; buildHelp(); }, () => buildHelp());
   $('#pClose').onclick = () => setTool('sel'); if ($('#tTools')) $('#tTools').onclick = e => { e.preventDefault(); toolsDialog(); };
 }
