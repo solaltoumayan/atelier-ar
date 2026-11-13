@@ -1181,8 +1181,11 @@ function asmTap(sx, sy, wx, wy) {
 
 // ---------- Mes modèles d'équerres : catalogue perso, rien n'est posé par défaut ----------
 // modèle { id, type:'mur'|'asm', name, a: aile 1 (mm) — au mur / sur la planche traversée, l: aile 2 (mm) — sous l'étagère / sur le chant, w: largeur (mm), h: trous par aile, sc: vis, col }
-const BR_COL = { acier: ['Acier', '#8a8f96', 0x8a8f96], noir: ['Noir', '#2b2b2b', 0x2b2b2b], blanc: ['Blanc', '#e4e4df', 0xe4e4df], laiton: ['Doré', '#b08d3c', 0xb08d3c], bois: ['Bois', '#c8a06a', 0xc8a06a] };
+const BR_COL = { acier: ['Zingué', '#a9b4bf', 0xa9b4bf], noir: ['Noir', '#2b2b2b', 0x2b2b2b], blanc: ['Blanc', '#e4e4df', 0xe4e4df], laiton: ['Doré', '#b08d3c', 0xb08d3c], bois: ['Bois', '#c8a06a', 0xc8a06a] };
 const brCol = c => (BR_COL[c] || BR_COL.acier)[1];
+// teintes métal [clair, moyen, sombre] pour dessiner une vraie équerre (plate, bouts arrondis, trous fraisés)
+const BR_TINT = { acier: ['#e9eff4', '#b4c0cb', '#7d8a96'], noir: ['#5a5a5a', '#2c2c2c', '#111'], blanc: ['#ffffff', '#ebebe6', '#c4c4bc'], laiton: ['#f1d58e', '#c9a14c', '#8a6a25'], bois: ['#ecc896', '#c8a06a', '#9a7444'] };
+const brTint = c => BR_TINT[c] || BR_TINT.acier;
 const brModels = () => LS.get('atelier.brmodels') || [];
 const brSaveModels = a => LS.set('atelier.brmodels', a);
 // Catalogue Leroy Merlin : équerres classiques (relevé sur leroymerlin.fr le 13/11/2026 ; références et dispo peuvent changer)
@@ -1238,10 +1241,25 @@ function brAdopt() {
   if (add) brSaveModels(ms);
 }
 // petit dessin d'un modèle : un L avec ses cotes
-function brSvg(m, big) {
-  const a = +m.a || 0, l = +m.l || 0, W = big ? 150 : 34, H = big ? 120 : 28, k = Math.min((W - (big ? 40 : 6)) / Math.max(l, 1), (H - (big ? 30 : 6)) / Math.max(a, 1)), x0 = big ? 22 : 3, y0 = big ? 10 : 3, th = big ? 5 : 3, c = brCol(m.col);
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="vertical-align:middle;flex:none">${m.col === 'blanc' ? `<path d="M${x0} ${y0}V${y0 + a * k}H${x0 + l * k}" fill="none" stroke="#9b9488" stroke-width="${th + 2}" stroke-linejoin="miter"/>` : ''}<path d="M${x0} ${y0}V${y0 + a * k}H${x0 + l * k}" fill="none" stroke="${c}" stroke-width="${th}" stroke-linejoin="miter"/>`;
-  if (big && a && l) s += `<text x="${x0 - 5}" y="${y0 + a * k / 2}" font-size="10" text-anchor="end" dominant-baseline="middle" fill="#7a6e60">${a}</text><text x="${x0 + l * k / 2}" y="${y0 + a * k + 14}" font-size="10" text-anchor="middle" fill="#7a6e60">${l}</text>`;
+function brSvg(m, big) { // équerre vue de ¾ : aile 1 debout, aile 2 couchée vers nous
+  const a = +m.a || 40, l = +m.l || 40, w = +m.w || Math.max(12, a * .35), W = big ? 150 : 34, H = big ? 120 : 28, [c1, c2, c3] = brTint(m.col), id = 'bg' + Math.random().toString(36).slice(2, 7);
+  const dx = -.82, dy = .5, ext = Math.max(a, l), k = Math.min((W - 6) / (w + l * .82 + 4), (H - 6) / (a + l * .5 + 4)), ww = w * k, A = a * k, Lx = l * k * dx, Ly = l * k * dy;
+  const X = (W - (ww - Lx)) / 2 - Lx, Y = (H - (A + Ly)) / 2 + A, r = ww / 2, nh = Math.max(1, Math.min(4, Math.round(+m.h || 2)));
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="vertical-align:middle;flex:none"><defs><linearGradient id="${id}" x1="0" x2="1"><stop offset="0" stop-color="${c2}"/><stop offset=".45" stop-color="${c1}"/><stop offset="1" stop-color="${c3}"/></linearGradient></defs>`;
+  // aile couchée (parallélogramme qui part du coin vers l'avant-gauche, bout arrondi)
+  const P = (x, y) => `${(x).toFixed(1)} ${(y).toFixed(1)}`, ex = X + Lx, ey = Y + Ly;
+  s += `<path d="M${P(X, Y)}L${P(X + ww, Y)}L${P(ex + ww, ey)}A${r} ${r * .55} 0 0 1 ${P(ex, ey)}Z" fill="url(#${id})" stroke="${c3}" stroke-width="${big ? .8 : .5}"/>`;
+  // aile debout (bande verticale, haut arrondi)
+  s += `<path d="M${P(X, Y)}L${P(X, Y - A + r)}A${r} ${r} 0 0 1 ${P(X + ww, Y - A + r)}L${P(X + ww, Y)}Z" fill="url(#${id})" stroke="${c3}" stroke-width="${big ? .8 : .5}"/>`;
+  s += `<path d="M${P(X, Y)}L${P(X + ww, Y)}" stroke="${c3}" stroke-width="${big ? 1.4 : .8}"/>`;
+  const hr = Math.max(big ? 2.2 : .9, ww * .2);
+  for (let i = 0; i < nh; i++) { // trous fraisés
+    const hx = X + ww / 2;
+    s += `<circle cx="${hx.toFixed(1)}" cy="${(Y - r * .4 - (A - r * 1.4) * (1 - (i + .5) / nh)).toFixed(1)}" r="${hr.toFixed(1)}" fill="${c3}"/><circle cx="${hx.toFixed(1)}" cy="${(Y - r * .4 - (A - r * 1.4) * (1 - (i + .5) / nh)).toFixed(1)}" r="${(hr * .55).toFixed(1)}" fill="#3a3f45" opacity=".75"/>`;
+    const t = (i + .5) / nh * .85 + .1, lx = X + ww / 2 + Lx * t, ly = Y + Ly * t;
+    s += `<ellipse cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" rx="${hr.toFixed(1)}" ry="${(hr * .55).toFixed(1)}" fill="${c3}"/><ellipse cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" rx="${(hr * .55).toFixed(1)}" ry="${(hr * .3).toFixed(1)}" fill="#3a3f45" opacity=".75"/>`;
+  }
+  if (big) s += `<text x="${(X + ww + 5).toFixed(1)}" y="${(Y - A / 2).toFixed(1)}" font-size="10" dominant-baseline="middle" fill="#7a6e60">${a}</text><text x="${(X + ww + Lx / 2 + 6).toFixed(1)}" y="${(Y + Ly / 2 + 12).toFixed(1)}" font-size="10" fill="#7a6e60">${l}</text>`;
   return s + '</svg>';
 }
 const brDesc = m => `${m.type === 'mur' ? `mur ${m.a} × étagère ${m.l}` : `${m.a} × ${m.l}`} mm · larg. ${m.wq ? '≈' : ''}${m.w}${m.lm ? '' : ` · ${m.h} trou${m.h > 1 ? 's' : ''}/aile`}${m.kg ? ` · jusqu'à ${m.kg} kg` : ''}${m.sc ? ` · vis ${esc(m.sc)}` : ''}${m.ref ? ` · réf. ${m.ref}` : ''}`;
@@ -1326,9 +1344,12 @@ function drawWall() {
   const num = wallNum();
   for (const p of parts('murale')) {
     const g = wallGeom(p), on = selPart === p, [ax, ay] = toS(g.cx - g.w / 2, g.top), [bx, by] = toS(g.cx + g.w / 2, g.bot), w = bx - ax, h = by - ay;
-    cx.fillStyle = on ? '#f08c00' : p.col === 'blanc' ? '#b9b9b2' : p.col ? brCol(p.col) : '#5c636a'; cx.fillRect(ax, ay, w, h);
-    cx.fillStyle = 'rgba(255,255,255,.55)'; const d = Math.max(1.2, 2.5 * Vw.s); [.3, .72].forEach(f => { cx.beginPath(); cx.arc(ax + w / 2, ay + h * f, d, 0, 7); cx.fill(); });
-    if (on) { cx.strokeStyle = '#d9480f'; cx.lineWidth = 2; cx.strokeRect(ax - 2, ay - 2, w + 4, h + 4); }
+    const [c1, c2, c3] = brTint(p.col), r = Math.min(w / 2, h / 2), gr = cx.createLinearGradient(ax, 0, ax + w, 0); gr.addColorStop(0, c2); gr.addColorStop(.45, c1); gr.addColorStop(1, c3);
+    cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(ax + w, ay); cx.lineTo(ax + w, by - r); cx.arc(ax + w / 2, by - r, r, 0, Math.PI); cx.closePath();
+    cx.fillStyle = gr; cx.fill(); cx.strokeStyle = on ? '#d9480f' : c3; cx.lineWidth = on ? 2.5 : 1; cx.stroke();
+    cx.fillStyle = c3; cx.fillRect(ax, ay, w, Math.max(1.5, 2 * Vw.s)); // l'aile sous l'étagère, vue par la tranche
+    const nh = Math.max(1, Math.min(4, Math.round(p.mh || 2))), hr = Math.max(1.3, Math.min(w * .2, 3 * Vw.s));
+    for (let i = 0; i < nh; i++) { const hy = ay + (h - r) * (i + .6) / (nh + .2) + r * .2, hx = ax + w / 2; cx.fillStyle = c3; cx.beginPath(); cx.arc(hx, hy, hr, 0, 7); cx.fill(); cx.fillStyle = 'rgba(40,44,48,.75)'; cx.beginPath(); cx.arc(hx, hy, hr * .55, 0, 7); cx.fill(); }
     const n = num[p.id], [nx, ny] = [ax + w / 2, by + 11]; cx.fillStyle = '#c92a2a'; cx.beginPath(); cx.arc(nx, ny, 8, 0, 7); cx.fill(); cx.fillStyle = '#fff'; cx.font = '800 10px -apple-system,Segoe UI,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(n, nx, ny + .5);
   }
 }
@@ -3259,7 +3280,7 @@ function build3() {
   }
   T3.pm = T3.pm || {};
   for (const [x0, y0, z0, x1, y1, z1, col, shape, hinge] of partBoxes()) {
-    const w = x1 - x0, h = y1 - y0, d = z1 - z0, mat = col === 'w' ? (shape === 'tiroir' || w > h ? mats.h : mats.v) : (T3.pm[col] || (T3.pm[col] = new THREE.MeshStandardMaterial({ color: col, roughness: col === '#2a2a2a' ? .4 : .75, metalness: col === '#2a2a2a' ? .6 : 0 })));
+    const w = x1 - x0, h = y1 - y0, d = z1 - z0, mat = col === 'w' ? (shape === 'tiroir' || w > h ? mats.h : mats.v) : (T3.pm[col + shape] || (T3.pm[col + shape] = new THREE.MeshStandardMaterial({ color: col, roughness: shape === 'metal' ? .3 : col === '#2a2a2a' ? .4 : .75, metalness: shape === 'metal' ? .55 : col === '#2a2a2a' ? .6 : 0 })));
     let geo;
     if (shape === 'cyl') geo = new THREE.CylinderGeometry(w / 2, w / 2, h, 24);
     else if (shape === 'cone') geo = new THREE.CylinderGeometry(w / 2, w * .28, h, 24);
@@ -3378,7 +3399,7 @@ function partBoxes() {
   const out = [], t = S().t;
   for (const p of parts('dos')) { const o = outerRect(p.a), e = p.mat === 'pin' ? t : (p.ep || 5); out.push([o.x0, o.y0, -e, o.x1, o.y1, 0, p.mat === 'pin' ? 'w' : '#cfb489']); }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); out.push([g.x0, g.y0, 0, g.x1, g.y1, g.L, '#c99a62']); }
-  for (const p of parts('murale')) { const g = wallGeom(p); const c = p.col ? brCol(p.col) : '#5c636a'; out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 4, c]); out.push([g.cx - g.w / 2, g.top - 4, 0, g.cx + g.w / 2, g.top, p.wl, c]); }
+  for (const p of parts('murale')) { const g = wallGeom(p); const c = brTint(p.col)[1]; out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 2.5, c, 'metal']); out.push([g.cx - g.w / 2, g.top - 2.5, 0, g.cx + g.w / 2, g.top, p.wl, c, 'metal']); }
   for (const p of parts('pied')) {
     const g = legGeom(p), d = depth(byId(p.b)), zs = p.pair === false ? [d / 2] : [d - p.ins - g.w / 2, p.ins + g.w / 2], col = p.src === 'pin' ? 'w' : p.shape === 'epingle' ? '#2a2a2a' : '#c8955a';
     const shape = p.src === 'pin' ? 'box' : p.shape === 'rond' ? 'cyl' : p.shape === 'compas' ? 'cone' : p.shape === 'epingle' ? 'pin' : 'box';
