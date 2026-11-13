@@ -3177,7 +3177,7 @@ document.addEventListener('click', e => { const i = e.target.closest && e.target
 document.addEventListener('pointerdown', e => { if (KP.inp && !e.target.closest('#kp') && !e.target.closest('input[data-kp]')) closeKP(); }, true);
 
 // ---------- Vue 3D (three.js, chargé seulement à l'ouverture) ----------
-const V3 = { yaw: -.55, pitch: .32, dist: 3000, target: null, sel: null, showScrews: true, raf: 0 };
+const V3 = { yaw: -.55, pitch: .32, dist: 3000, target: null, sel: null, showScrews: true, raf: 0, wall: false };
 let T3 = null;
 function load3() { return new Promise((res, rej) => { if (window.THREE) return res(); const s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
 function v3Open() { return $('#v3d').style.display === 'flex'; }
@@ -3214,6 +3214,34 @@ function init3() {
   bind3();
 }
 function clear3(group) { for (const o of [...group.children]) { group.remove(o); if (o.geometry && o.geometry !== T3.screwGeo && o.geometry !== T3.hitGeo) o.geometry.dispose(); } }
+// ---- 3D « au mur » : trait repère, traits de niveau et hauteurs des équerres dessinés au crayon sur le mur ----
+function label3(txt, col = '#c2255c', hMM = 34) {
+  const c = document.createElement('canvas'), x = c.getContext('2d'), F = 64; x.font = `700 ${F}px -apple-system,Segoe UI,sans-serif`;
+  const w = Math.ceil(x.measureText(txt).width) + 28; c.width = w; c.height = F + 24;
+  x.font = `700 ${F}px -apple-system,Segoe UI,sans-serif`; x.fillStyle = 'rgba(255,253,248,.92)'; x.beginPath(); x.roundRect(0, 0, w, c.height, 16); x.fill();
+  x.fillStyle = col; x.textBaseline = 'middle'; x.fillText(txt, 14, c.height / 2 + 2);
+  const t = new THREE.CanvasTexture(c), m = new THREE.Mesh(new THREE.PlaneGeometry(hMM * w / c.height, hMM), new THREE.MeshBasicMaterial({ map: t, transparent: true }));
+  return m;
+}
+function wallMarks3(env, bb, fy, wz) {
+  const pen = new THREE.MeshBasicMaterial({ color: 0xc2255c }), grey = new THREE.MeshBasicMaterial({ color: 0x7a6e60 }), z = wz + .6, add = (o, x, y) => { o.position.set(x, y, z); env.add(o); return o; };
+  const fl = S().wallFloor || 0, top = bb.y1 + 150, hL = Math.max(28, Math.max(bb.x1 - bb.x0, bb.y1 - fy) * .034), lw = Math.max(2.5, hL * .08);
+  add(new THREE.Mesh(new THREE.PlaneGeometry(lw, top - fy), pen), bb.x0, (top + fy) / 2); // trait repère vertical
+  { const r = label3('repère', '#c2255c', hL); r.geometry.translate(r.geometry.parameters.width / 2, 0, 0); add(r, bb.x0 + lw * 2, top - hL / 2); }
+  if (fl > 0) { // cote du sol au bas du meuble
+    const x = bb.x1 + hL * 2.5;
+    add(new THREE.Mesh(new THREE.PlaneGeometry(lw, fl), grey), x, fy + fl / 2);
+    for (const y of [fy + lw / 2, bb.y0]) add(new THREE.Mesh(new THREE.PlaneGeometry(hL, lw), grey), x, y);
+    const L = label3(`${fmt(fl)} cm`, '#7a6e60', hL); add(L, x + hL * .4 + L.geometry.parameters.width / 2, fy + fl / 2);
+  }
+  const P = wallPlan(); if (!P) return;
+  for (const o of P.br) {
+    const g = wallGeom(o.p), x = g.cx, y = g.top;
+    add(new THREE.Mesh(new THREE.PlaneGeometry(g.w + hL * 3, lw), pen), x, y); // trait de niveau
+    const L = label3(`${o.n} · ${fmt(o.hTop)} cm`, '#c2255c', hL), w = L.geometry.parameters.width;
+    add(L, x - g.w / 2 - hL * .3 - w / 2, y - hL * .9);
+  }
+}
 function build3() {
   const { g, mats } = T3; clear3(g.boards); clear3(g.deco); clear3(g.env);
   const bb = bbox(); let maxD = 0;
@@ -3256,9 +3284,11 @@ function build3() {
   // sol et mur pour l'ombre
   const xb = partsExtent(bb), backE = Math.max(0, ...parts('dos').map(p => p.mat === 'pin' ? S().t : (p.ep || 5)));
   const span = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) * 4 + 4000;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor); floor.rotation.x = -Math.PI / 2; floor.position.set((bb.x0 + bb.x1) / 2, xb.y0 - .5, 0); floor.receiveShadow = true; g.env.add(floor);
-  const wall = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.wall); wall.position.set((bb.x0 + bb.x1) / 2, xb.y0 + span / 2 - 1, -1.5 - backE); wall.receiveShadow = true; wall.userData.wall = true; g.env.add(wall);
-  const eb = { ...xb }; if (vis('showObjs')) for (const o of D.objs) { eb.y1 = Math.max(eb.y1, o.y + o.h); eb.x0 = Math.min(eb.x0, o.x - objW(o) / 2); eb.x1 = Math.max(eb.x1, o.x + objW(o) / 2); }
+  const fy = V3.wall ? Math.min(xb.y0, bb.y0 - (S().wallFloor || 0)) : xb.y0, wz = -1.5 - backE; // au mur : le sol descend à la vraie hauteur
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor); floor.rotation.x = -Math.PI / 2; floor.position.set((bb.x0 + bb.x1) / 2, fy - .5, 0); floor.receiveShadow = true; g.env.add(floor);
+  const wall = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.wall); wall.position.set((bb.x0 + bb.x1) / 2, fy + span / 2 - 1, wz); wall.receiveShadow = true; wall.userData.wall = true; g.env.add(wall);
+  if (V3.wall) wallMarks3(g.env, bb, fy, wz);
+  const eb = { ...xb }; if (V3.wall) eb.y0 = fy; if (vis('showObjs')) for (const o of D.objs) { eb.y1 = Math.max(eb.y1, o.y + o.h); eb.x0 = Math.min(eb.x0, o.x - objW(o) / 2); eb.x1 = Math.max(eb.x1, o.x + objW(o) / 2); }
   const c = [(eb.x0 + eb.x1) / 2, (eb.y0 + eb.y1) / 2, maxD / 2], size = Math.max(eb.x1 - eb.x0, eb.y1 - eb.y0, maxD);
   V3.center = c; V3.size = size; if (!V3.target) V3.target = new THREE.Vector3(...c);
   const sun = T3.sun; sun.position.set(c[0] - size * .8, c[1] + size * 1.6, c[2] + size * 1.4); sun.target.position.set(...c);
@@ -3382,8 +3412,10 @@ function arSetupUI() {
 function panel3() {
   const p = $('#p3d'), j = V3.sel && jointList().find(x => x.key === V3.sel);
   if (!j) {
-    p.innerHTML = verChips() + `<div class="row" style="margin:0 0 6px"><button class="btn" id="v3Photo" style="flex:1">🖼 Incruster dans une photo</button></div><div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
+    p.innerHTML = verChips() + `<div class="row" style="margin:0 0 6px;align-items:center"><button class="btn${V3.wall ? ' on' : ''}" id="v3Wall">🧱 Accroché au mur</button>${V3.wall ? `<label style="display:flex;align-items:center;gap:5px;font-size:13px">bas à <input id="v3Fl" inputmode="decimal" value="${fmt(S().wallFloor || 0)}" style="width:62px;font:15px inherit;padding:7px;border:1px solid var(--line);border-radius:8px"> cm du sol</label>` : ''}</div><div class="row" style="margin:0 0 6px"><button class="btn" id="v3Photo" style="flex:1">🖼 Incruster dans une photo</button></div><div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
     bindVerChips(p, () => { build3(); panel3(); });
+    $('#v3Wall').onclick = () => { V3.wall = !V3.wall; V3.target = null; build3(); setView3('face'); panel3(); if (V3.wall && !(S().wallFloor > 0)) toast('Indique à quelle hauteur du sol est le bas du meuble'); };
+    if ($('#v3Fl')) $('#v3Fl').onchange = () => { const v = parseCm($('#v3Fl').value); if (!Number.isFinite(v) || v < 0) return toast('Valeur non comprise'); D.settings.wallFloor = v; scheduleSave(); V3.target = null; build3(); setView3('face'); };
     $('#v3Photo').onclick = () => { close3D(); RM.wantFree = true; openRoom(); if (RM.img) { RM.free = RM.free || null; freeStart(); } };
     arLinkHtml().then(h => { const sl = $('#arSlot'); if (!sl) return; sl.innerHTML = h; if ($('#arSetup')) $('#arSetup').onclick = arSetupUI; });
     if ($('#arEdit')) $('#arEdit').onclick = e => { e.preventDefault(); arSetupUI(); };
