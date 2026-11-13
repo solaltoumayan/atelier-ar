@@ -23,6 +23,7 @@ header{display:flex;align-items:center;gap:10px}header .t{flex:1;min-width:0}
 #note{font-size:13px;color:var(--mute)}
 #sz{position:absolute;top:12px;left:12px;right:12px;display:none;flex-direction:column;gap:6px;background:rgba(255,253,249,.94);border:1px solid var(--line);border-radius:14px;padding:8px 10px;box-shadow:0 4px 14px rgba(0,0,0,.15);z-index:5}
 #sz.on{display:flex}
+#sz .seg button{width:auto;height:auto;font-size:13px;font-weight:600;padding:8px 6px;border:none;border-radius:0}#sz .seg button.on{background:var(--ink);color:#fff}
 #sz .r{display:flex;align-items:center;gap:8px}
 #sz button{border:1px solid var(--line);background:#fff;border-radius:10px;font-size:24px;font-weight:700;width:46px;height:42px;flex:none;color:var(--ink);padding:0}
 #sz input{width:100%;margin:0;accent-color:var(--acc)}
@@ -38,13 +39,13 @@ header{display:flex;align-items:center;gap:10px}header .t{flex:1;min-width:0}
     <model-viewer id="mv" camera-controls touch-action="pan-y" shadow-intensity="1" exposure="1" ar ar-modes="webxr scene-viewer quick-look" ar-scale="fixed" ar-placement="floor" camera-orbit="-30deg 72deg auto">
       <button slot="ar-button" id="arBtn">📱 Voir chez moi en vraie grandeur</button>
       <div id="trk" style="position:absolute;left:12px;right:12px;bottom:84px;display:none;background:rgba(31,26,20,.85);color:#fff;border-radius:12px;padding:10px 12px;font-size:14px;line-height:1.4;z-index:5"></div>
-      <div id="sz"><div class="r"><button id="szM" aria-label="Plus petit">−</button><div id="szV">100 %<small></small></div><button id="szP" aria-label="Plus grand">+</button></div><input id="szS" type="range" min="70" max="130" step="1" value="100"></div>
+      <div id="sz"><div class="r"><button id="szM" aria-label="Plus petit">−</button><div id="szV">100 %<small></small></div><button id="szP" aria-label="Plus grand">+</button></div><input id="szS" type="range" min="70" max="130" step="1" value="100"><div class="r"><button id="rotL" aria-label="Tourner à gauche">⟲</button><div style="flex:1;text-align:center;font-size:12px;color:var(--mute)" id="rotV">Rotation 0°</div><button id="rotR" aria-label="Tourner à droite">⟳</button></div><div class="seg" style="align-self:stretch;display:flex"><button id="pinFix" style="flex:1">🔒 Vraie grandeur</button><button id="pinFree" style="flex:1">✋ Pincer pour ajuster</button></div></div>
     </model-viewer>
     <div id="msg"></div>
   </div>
   <div class="bar">
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"><div class="seg"><button data-pl="floor" class="on">Posé au sol</button><button data-pl="wall">Fixé au mur</button></div><div class="seg"><button id="rulerBtn" class="on">📏 Mètre témoin</button></div></div>
-    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. Le <b>mètre témoin</b> orange (1 m debout + 1 m au sol, en bandes de 10 cm) sert à vérifier : pose un vrai mètre à côté. S'il ne coïncide pas, corrige avec − / + en haut. La page repart toujours à 100 %.</div>
+    <div id="note">Touche le bouton, vise le sol (ou le mur) en bougeant doucement le téléphone, puis touche l'écran pour poser le meuble. Fais-le glisser d'un doigt, tourne-le à deux doigts. <b>Pendant la caméra</b> : un doigt pour déplacer, deux doigts pour tourner (et pour agrandir/réduire si « ✋ Pincer » est choisi), ou les boutons ⟲ ⟳ en haut. Le <b>mètre témoin</b> orange (1 m debout + 1 m au sol, en bandes de 10 cm) sert à vérifier : pose un vrai mètre à côté. S'il ne coïncide pas, corrige avec − / + en haut. La page repart toujours à 100 %.</div>
   </div>
 </div>
 <script type="module">
@@ -169,7 +170,10 @@ function build(M, ruler) {
   }
   return { scene, W: x1 - x0, H: y1 - y0 };
 }
-let blobUrl = null, DIM = null, MODEL = null, RULER = true;
+let blobUrl = null, DIM = null, MODEL = null, RULER = true, YAW = 0;
+// rotation du meuble (boutons) et taille libre au doigt pendant la caméra
+function setYaw(v) { YAW = ((v + 540) % 360) - 180; $('#mv').orientation = `0deg 0deg ${YAW}deg`; $('#rotV').textContent = 'Rotation ' + YAW + '°'; }
+function setPinch(free) { $('#mv').setAttribute('ar-scale', free ? 'auto' : 'fixed'); $('#pinFix').classList.toggle('on', !free); $('#pinFree').classList.toggle('on', free); try { localStorage.setItem('atelier.ar.pinch', free ? '1' : '0'); } catch { } }
 async function makeModel() {
   const { scene, W, H } = build(MODEL, RULER), glb = await new GLTFExporter().parseAsync(scene, { binary: true });
   if (blobUrl) URL.revokeObjectURL(blobUrl); blobUrl = URL.createObjectURL(new Blob([glb], { type: 'model/gltf-binary' })); $('#mv').src = blobUrl; return { W, H };
@@ -188,6 +192,9 @@ $('#szM').onclick = () => setScale(+$('#szS').value - 1);
 $('#szP').onclick = () => setScale(+$('#szS').value + 1);
 $('#szS').oninput = () => setScale(+$('#szS').value);
 $('#szV').onclick = () => setScale(100);
+$('#rotL').onclick = () => setYaw(YAW - 15); $('#rotR').onclick = () => setYaw(YAW + 15);
+$('#pinFix').onclick = () => setPinch(false); $('#pinFree').onclick = () => setPinch(true);
+{ let f = true; try { f = localStorage.getItem('atelier.ar.pinch') !== '0'; } catch { } setPinch(f); }
 (async () => {
   const mv = $('#mv'), h = location.hash.slice(1);
   if (!h) { $('#msg').textContent = 'Aucun meuble : ouvre cette page depuis le bouton « Voir chez moi » de la vue 3D de l\'app.'; return; }

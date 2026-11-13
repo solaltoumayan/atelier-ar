@@ -74,6 +74,7 @@ td.num{font-variant-numeric:tabular-nums;font-weight:700}
 #kp button.ok{background:var(--acc)}
 #kp button.sm{font-size:17px}
 input.kpOn{outline:3px solid var(--acc)!important}
+#rPanel input[type=range]{accent-color:var(--acc);width:100%}
 #buildMenu{position:fixed;z-index:22;background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(60,40,10,.22);padding:8px;display:none;grid-template-columns:repeat(4,1fr);gap:6px;width:min(400px,calc(100vw - 16px))}
 #buildMenu button{display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--line);background:#fff;border-radius:12px;padding:10px 4px;font-size:12px;line-height:1.15;text-align:center;color:var(--ink)}
 #buildMenu button .bi{font-size:22px;line-height:1}
@@ -2494,13 +2495,14 @@ async function saveFile(name, data) {
 // On en déduit la caméra (focale estimée) pour dessiner le meuble en relief, collé au mur.
 const RM = { img: null, iw: 0, ih: 0, step: 'start', pts: null, refKind: 'a4', refW: 210, refH: 297, Hm: null, Hinv: null, cam: null, sheetH: 1000, onFloor: true, bottom: 0, offX: null, books: true, relief: true, view: null, drag: null, hist: [] };
 const rcv = $('#rcv'), rx = rcv.getContext('2d');
-function rSnap() { return JSON.stringify({ pts: RM.pts, offX: RM.offX, bottom: RM.bottom, sheetH: RM.sheetH, onFloor: RM.onFloor, step: RM.step, refKind: RM.refKind, refW: RM.refW, refH: RM.refH, relief: RM.relief, books: RM.books }); }
+function rSnap() { return JSON.stringify({ pts: RM.pts, offX: RM.offX, bottom: RM.bottom, sheetH: RM.sheetH, onFloor: RM.onFloor, step: RM.step, refKind: RM.refKind, refW: RM.refW, refH: RM.refH, relief: RM.relief, books: RM.books, free: RM.free ? { ...RM.free, dirty: undefined } : null }); }
 function rPush() { const s_ = rSnap(); if (RM.hist[RM.hist.length - 1] !== s_) { RM.hist.push(s_); if (RM.hist.length > 80) RM.hist.shift(); } rUndoBtn(); }
 function rUndoBtn() { const b = $('#rUndo'); if (b) b.disabled = !RM.hist.length || !RM.img; }
 function rUndo() {
   let s_ = RM.hist.pop(); if (s_ === rSnap()) s_ = RM.hist.pop(); if (!s_) return rUndoBtn();
   const o = JSON.parse(s_); Object.assign(RM, o);
   if (o.step === 'place' && RM.pts) { const keep = RM.offX; roomCalibrate(true); RM.offX = keep; } else { RM.step = o.step; }
+  if (o.step === 'free') { RM.free.dirty = false; freeRender(); }
   roomPanel(); roomDraw(); rUndoBtn();
 }
 function openRoom() {
@@ -2656,6 +2658,8 @@ function roomDraw() {
     const hr = md < 40 ? 6 : 13; RM.small = md < 60;
     RM.pts.forEach(q => { const [X, Y] = S_(...q); rx.beginPath(); rx.arc(X, Y, hr, 0, Math.PI * 2); rx.fillStyle = 'rgba(255,255,255,.25)'; rx.fill(); rx.lineWidth = 3; rx.strokeStyle = '#fff'; rx.stroke(); rx.lineWidth = 1.5; rx.strokeStyle = '#d9480f'; rx.beginPath(); rx.moveTo(X - 6, Y); rx.lineTo(X + 6, Y); rx.moveTo(X, Y - 6); rx.lineTo(X, Y + 6); rx.stroke(); });
     if (RM.drag && RM.drag.i != null) roomLoupe(RM.pts[RM.drag.i]);
+  } else if (RM.step === 'free') {
+    rx.save(); rx.beginPath(); rx.rect(ox, oy, RM.iw * s, RM.ih * s); rx.clip(); freeDraw(rx, s, ox, oy); rx.restore();
   } else if (RM.step === 'place') {
     rx.save(); rx.beginPath(); rx.rect(ox, oy, RM.iw * s, RM.ih * s); rx.clip(); renderFurniture(rx, s, ox, oy); rx.restore();
   }
@@ -2674,7 +2678,8 @@ const toImg = ([X, Y]) => [(X - RM.view.ox) / RM.view.s, (Y - RM.view.oy) / RM.v
 const RP = new Map();
 rcv.addEventListener('pointerdown', e => {
   if (!RM.img) return; rcv.setPointerCapture(e.pointerId); const p = rpos(e); RP.set(e.pointerId, p);
-  if (RP.size === 2) { const [a, b] = [...RP.values()]; RM.drag = { pinch: true, d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], v0: { ...RM.view } }; return; }
+  if (RP.size === 2 && RM.step !== 'free') { const [a, b] = [...RP.values()]; RM.drag = { pinch: true, d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, m0: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], v0: { ...RM.view } }; return; }
+  if (RM.step === 'free') { freeDown(p); return; }
   if (RP.size > 2) return;
   if (RM.step === 'calib') {
     let best = -1, bd = e.pointerType === 'touch' ? 40 : 24;
@@ -2689,6 +2694,7 @@ rcv.addEventListener('wheel', e => { e.preventDefault(); const p = rpos(e); rZoo
 rcv.addEventListener('pointermove', e => {
   if (RP.has(e.pointerId)) RP.set(e.pointerId, rpos(e));
   if (!RM.drag) return; const p = rpos(e);
+  if (RM.drag.fmove || RM.drag.fpinch) return freeMove(p);
   if (RM.drag.pinch) { if (RP.size < 2) return; const [a, b] = [...RP.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], v0 = RM.drag.v0, ns = clamp(v0.s * d / RM.drag.d0, v0.s0 * .8, v0.s0 * 30), f = ns / v0.s;
     RM.view = { ...v0, s: ns, ox: m[0] - (RM.drag.m0[0] - v0.ox) * f, oy: m[1] - (RM.drag.m0[1] - v0.oy) * f }; roomDraw(); return; }
   if (RM.drag.pan) { RM.view = { ...RM.drag.v0, ox: RM.drag.v0.ox + p[0] - RM.drag.p0[0], oy: RM.drag.v0.oy + p[1] - RM.drag.p0[1] }; roomDraw(); return; }
@@ -2696,20 +2702,39 @@ rcv.addEventListener('pointermove', e => {
   else { const [u, v] = toImg(p), w = applyH(RM.Hinv, u, v); RM.offX = Math.round(RM.drag.offX + w[0] - RM.drag.w0[0]); if (!RM.onFloor) { RM.bottom = Math.round(RM.drag.bottom + w[1] - RM.drag.w0[1]); const i = $('#rPanel [data-k="bottom"]'); if (i) i.value = fmt(RM.bottom); } }
   roomDraw();
 });
-const rEnd = e => { RP.delete(e.pointerId); if (RM.drag && RM.drag.pinch && RP.size) return; if (RM.drag) { const was = RM.drag; RM.drag = null; if (!was.pan && !was.pinch && RM.hist.length && RM.hist[RM.hist.length - 1] === rSnap()) RM.hist.pop(); roomDraw(); rUndoBtn(); } };
+const rEnd = e => { RP.delete(e.pointerId); if (RM.drag && (RM.drag.pinch || RM.drag.fpinch) && RP.size) return; if (RM.drag && RM.drag.fpinch) rPush(); if (RM.drag) { const was = RM.drag; RM.drag = null; if (!was.pan && !was.pinch && !was.fpinch && RM.hist.length && RM.hist[RM.hist.length - 1] === rSnap()) RM.hist.pop(); roomDraw(); rUndoBtn(); } };
 rcv.addEventListener('pointerup', rEnd); rcv.addEventListener('pointercancel', rEnd);
 $('#rUndo').onclick = rUndo; $('#rFit').onclick = () => rFit();
 function roomPanel() {
   const p = $('#rPanel'), bb = bbox(), dims = bb ? `${fmt(bb.x1 - bb.x0)} × ${fmt(bb.y1 - bb.y0)} cm` : '';
-  $('#rSave').style.display = RM.step === 'place' ? '' : 'none';
-  $('#rTitle').textContent = RM.step === 'calib' ? 'Repère la feuille' : RM.step === 'place' ? D.name + ' · ' + dims : 'Dans ma pièce';
+  $('#rSave').style.display = RM.step === 'place' || RM.step === 'free' ? '' : 'none';
+  $('#rTitle').textContent = RM.step === 'calib' ? 'Repère la feuille' : RM.step === 'place' || RM.step === 'free' ? D.name + ' · ' + dims : 'Dans ma pièce';
+  if (RM.step === 'free') {
+    const F = RM.free;
+    p.innerHTML = verChips() + `<p style="margin:0 0 6px"><b>Un doigt</b> : déplacer. <b>Deux doigts</b> : agrandir et tourner. Pose le bas du meuble sur le sol de la photo.</p>
+      <label class="f" style="margin:4px 0">Rotation <b id="fYawV">${Math.round(F.yaw)}°</b><input type="range" id="fYaw" min="-180" max="180" step="1" value="${F.yaw}"></label>
+      <label class="f" style="margin:4px 0">Hauteur du regard <b id="fPitV">${Math.round(F.pitch)}°</b><input type="range" id="fPit" min="-15" max="60" step="1" value="${F.pitch}"></label>
+      <div class="grid2"><label class="f" style="margin:4px 0">Taille<input type="range" id="fK" min="-100" max="100" step="1" value="0"></label><label class="f" style="margin:4px 0">Lumière<input type="range" id="fL" min="50" max="150" step="1" value="${Math.round(F.light * 100)}"></label></div>
+      <div class="row"><button class="btn" id="fMir">↔ Regarder de l'autre côté</button><button class="btn" id="fCal">📏 Caler avec une feuille</button><button class="btn pri" id="fOk">✓ Valider l'image</button></div>`;
+    bindVerChips(p, () => { RM.free.dirty = true; roomPanel(); freeRender(); }); rUndoBtn();
+    const sl = (id, f) => { const el = $('#' + id); el.onpointerdown = () => rPush(); el.oninput = () => f(+el.value); };
+    sl('fYaw', v => { F.yaw = v; $('#fYawV').textContent = v + '°'; freeSoon(); });
+    sl('fPit', v => { F.pitch = v; $('#fPitV').textContent = v + '°'; freeSoon(); });
+    let k0 = F.k; $('#fK').onpointerdown = () => { rPush(); k0 = F.k; }; $('#fK').oninput = () => { F.k = k0 * Math.pow(2, +$('#fK').value / 100); roomDraw(); }; $('#fK').onchange = () => { $('#fK').value = 0; k0 = F.k; };
+    sl('fL', v => { F.light = v / 100; roomDraw(); });
+    $('#fMir').onclick = () => { rPush(); F.yaw = -F.yaw; roomPanel(); freeRender(); };
+    $('#fCal').onclick = () => { RM.step = 'calib'; roomPanel(); roomDraw(); };
+    $('#fOk').onclick = () => { freeExport(); toast('Image enregistrée'); };
+    return;
+  }
   if (RM.step === 'start') {
-    p.innerHTML = `<p><b>1.</b> Scotche une <b>feuille A4</b> bien à plat sur le mur, à peu près là où ira le meuble.<br><b>2.</b> Recule et prends le mur en photo, feuille bien visible, le plus de face possible.<br><b>3.</b> Tu toucheras les 4 coins de la feuille : l'app en déduit l'échelle et la perspective.</p>
+    p.innerHTML = `<p><b>1.</b> Scotche une <b>feuille A4</b> bien à plat sur le mur, à peu près là où ira le meuble.<br><b>2.</b> Recule et prends le mur en photo, feuille bien visible, le plus de face possible.<br><b>3.</b> Tu toucheras les 4 coins de la feuille : l'app en déduit l'échelle et la perspective.<br><span style="color:var(--mute)">Pas de feuille ? Prends juste la photo : tu placeras le meuble à la main.</span></p>
       <div class="row"><button class="btn pri" id="rTake">📷 Prendre la photo</button><button class="btn" id="rPick">🖼 Choisir une photo</button></div>
       <div id="rSent" style="margin-top:10px"></div>`;
     sentPhotos();
   } else if (RM.step === 'calib') {
     p.innerHTML = `<p>Glisse les <b>4 ronds</b> sur les <b>4 coins de la feuille</b>. <b>Zoome à deux doigts</b> sur la feuille pour viser juste : de cette précision dépend toute l'échelle.${RM.small ? ' <b style="color:#b42318">Les ronds sont trop serrés : zoome d\'abord.</b>' : ''}</p>
+      <div class="row" style="margin:0 0 8px"><button class="btn" id="rFree">✋ Pas de feuille : placer le meuble à la main</button></div>
       <div class="row" style="margin-top:0"><button class="btn${RM.refKind === 'a4' ? ' on' : ''}" data-ref="a4">Feuille A4</button><button class="btn${RM.refKind === 'other' ? ' on' : ''}" data-ref="other">Autre objet</button></div>
       ${RM.refKind === 'other' ? `<div class="grid2" style="margin-top:8px">${field('Largeur (cm)', 'refW', RM.refW)}${field('Hauteur (cm)', 'refH', RM.refH)}</div>` : ''}
       <div class="row"><button class="btn pri" id="rOk">Valider</button><button class="btn" id="rTake">📷 Autre photo</button><button class="btn" id="rPick">🖼</button></div>`;
@@ -2722,6 +2747,7 @@ function roomPanel() {
   bindVerChips(p, () => { roomPanel(); roomDraw(); }); rUndoBtn();
   const on = (id, f) => { const el = $('#' + id); if (el) el.onclick = () => { if (id !== 'rTake' && id !== 'rPick') rPush(); f(); }; };
   on('rTake', () => { roomMsg('Ouverture de l\'appareil photo…'); $('#rCam').click(); }); on('rPick', () => { roomMsg('Ouverture de la galerie…'); $('#rLib').click(); setTimeout(() => { if (!RM.img && $('#rMsg') && /Ouverture/.test($('#rMsg').textContent)) roomMsg('Pas encore de photo reçue. Si la galerie ne s\'est pas ouverte, ouvre l\'app dans Chrome (raccourci sur l\'écran d\'accueil) plutôt que dans l\'application Claude, puis réessaie.', true); }, 15000); });
+  on('rFree', () => freeStart());
   on('rOk', () => { if (RM.small) toast('Astuce : zoome sur la feuille pour placer les coins plus précisément'); p.querySelectorAll('input[data-k]').forEach(i => { const v = parseCm(i.value); if (v > 0) RM[i.dataset.k] = v; }); roomCalibrate(); });
   p.querySelectorAll('[data-ref]').forEach(b => b.onclick = () => { RM.refKind = b.dataset.ref; roomPanel(); });
   on('rFloor', () => { RM.onFloor = !RM.onFloor; if (!RM.onFloor && !RM.bottom) RM.bottom = 1000; roomPanel(); roomDraw(); });
@@ -2731,7 +2757,70 @@ function roomPanel() {
   p.querySelectorAll('input[data-k]').forEach(i => i.onchange = () => { const v = parseCm(i.value); if (!Number.isFinite(v) || v < 0) { i.value = fmt(RM[i.dataset.k]); return toast('Valeur non comprise'); } rPush(); RM[i.dataset.k] = v; if (RM.step === 'place') roomDraw(); });
   requestAnimationFrame(roomResize);
 }
+// ---------- Pièce « à la main » : le meuble en 3D incrusté dans la photo, déplacé / tourné / agrandi au doigt ----------
+let FR = null; // moteur 3D séparé, à fond transparent
+async function freeRender() {
+  const F = RM.free; if (!F) return;
+  try { await load3(); if (!T3) init3(); } catch { roomMsg('La 3D n\'a pas pu se charger : vérifie ta connexion.'); return; }
+  if (!FR) { FR = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true }); FR.setClearColor(0x000000, 0); FR.setPixelRatio(1); }
+  if (F.dirty !== false) { build3(); F.dirty = false; }
+  const bb = partsExtent(bbox()), d = Math.max(...D.boards.map(depth)), N = 1024;
+  const c = new THREE.Vector3((bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2, d / 2), rad = .5 * Math.hypot(bb.x1 - bb.x0, bb.y1 - bb.y0, d), fov = 24, dist = rad / Math.sin(fov * Math.PI / 360) * 1.04;
+  const yaw = F.yaw * Math.PI / 180, pit = F.pitch * Math.PI / 180, cam = new THREE.PerspectiveCamera(fov, 1, 10, dist * 4);
+  cam.position.set(c.x + Math.sin(yaw) * Math.cos(pit) * dist, c.y + Math.sin(pit) * dist, c.z + Math.cos(yaw) * Math.cos(pit) * dist); cam.lookAt(c); cam.updateMatrixWorld();
+  const vis_ = [T3.g.env.visible, T3.g.screws.visible]; T3.g.env.visible = false; T3.g.screws.visible = false;
+  FR.setSize(N, N, false); FR.render(T3.scene, cam); T3.g.env.visible = vis_[0]; T3.g.screws.visible = vis_[1];
+  const img = RM.fimg || (RM.fimg = document.createElement('canvas')); img.width = N; img.height = N; const g = img.getContext('2d'); g.clearRect(0, 0, N, N); g.drawImage(FR.domElement, 0, 0);
+  const P = v => { const p = v.clone().project(cam); return [(p.x + 1) / 2 * N, (1 - p.y) / 2 * N]; };
+  const a = new THREE.Vector3(c.x, bb.y0, c.z), right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0);
+  const [ax, ay] = P(a), [px] = P(a.clone().addScaledVector(right, 500)), [qx] = P(a.clone().addScaledVector(right, -500));
+  RM.fanchor = [ax, ay]; RM.fppm = Math.abs(px - qx) / 1000;
+  // largeur projetée au sol pour l'ombre
+  const xs = [[bb.x0, 0], [bb.x1, 0], [bb.x0, d], [bb.x1, d]].map(([x, z]) => P(new THREE.Vector3(x, bb.y0, z)));
+  RM.fshadow = { w: Math.max(...xs.map(p => p[0])) - Math.min(...xs.map(p => p[0])), h: Math.max(...xs.map(p => p[1])) - Math.min(...xs.map(p => p[1])) };
+  roomDraw();
+}
+function freeDraw(x, s, ox, oy) { // dessine ombre + meuble (x = contexte 2D, s/ox/oy = vue de la photo)
+  const F = RM.free; if (!F || !RM.fimg || !RM.fanchor) return;
+  const sc = s * F.k / RM.fppm, X = ox + F.u * s, Y = oy + F.v * s, sh = RM.fshadow;
+  x.save();
+  const sw = sh.w * sc * .55, shh = Math.max(4, sh.h * sc * .6 + 4); x.translate(X, Y); x.scale(1, shh / sw);
+  const gr = x.createRadialGradient(0, 0, sw * .2, 0, 0, sw); gr.addColorStop(0, `rgba(0,0,0,${.38 * F.shadow})`); gr.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = gr; x.beginPath(); x.arc(0, 0, sw, 0, Math.PI * 2); x.fill();
+  x.restore(); x.save();
+  if (F.light !== 1) x.filter = `brightness(${F.light})`;
+  x.drawImage(RM.fimg, X - RM.fanchor[0] * sc, Y - RM.fanchor[1] * sc, RM.fimg.width * sc, RM.fimg.height * sc);
+  x.restore();
+}
+function freeStart() {
+  const bb = partsExtent(bbox());
+  if (!RM.free) RM.free = { u: RM.iw / 2, v: RM.ih * .82, k: RM.ih * .45 / Math.max(300, bb.y1 - bb.y0), yaw: -20, pitch: 8, light: 1, shadow: 1 };
+  RM.free.dirty = true; RM.step = 'free'; roomPanel(); freeRender();
+}
+let freeRAF = 0; const freeSoon = () => { if (!freeRAF) freeRAF = requestAnimationFrame(() => { freeRAF = 0; freeRender(); }); };
+function freeDown(p) {
+  const F = RM.free;
+  if (RP.size === 2) { const [a, b] = [...RP.values()]; RM.drag = { fpinch: true, d0: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, a0: Math.atan2(b[1] - a[1], b[0] - a[0]), k0: F.k, yaw0: F.yaw }; return; }
+  rPush(); RM.drag = { fmove: true, p0: p, u0: F.u, v0: F.v };
+}
+function freeMove(p) {
+  const F = RM.free, D_ = RM.drag;
+  if (D_.fpinch) { if (RP.size < 2) return; const [a, b] = [...RP.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), an = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    F.k = D_.k0 * d / D_.d0; F.yaw = Math.round((D_.yaw0 - (an - D_.a0) * 180 / Math.PI) * 2) / 2; roomPanelFreeVals(); freeSoon(); return; }
+  if (D_.fmove) { F.u = D_.u0 + (p[0] - D_.p0[0]) / RM.view.s; F.v = D_.v0 + (p[1] - D_.p0[1]) / RM.view.s; roomDraw(); }
+}
+function roomPanelFreeVals() { const F = RM.free; if (!F) return; const y = $('#fYaw'), t = $('#fYawV'); if (y) y.value = F.yaw; if (t) t.textContent = Math.round(F.yaw) + '°'; }
+async function freeExport() {
+  const F = RM.free; if (!F || !RM.fimg) return;
+  const c = document.createElement('canvas'); c.width = RM.iw; c.height = RM.ih; const x = c.getContext('2d');
+  x.drawImage(RM.img, 0, 0); freeDraw(x, 1, 0, 0);
+  const bb = bbox(), fs = Math.round(RM.iw / 45), txt = `${D.name} · ${fmt(bb.x1 - bb.x0)} × ${fmt(bb.y1 - bb.y0)} cm`;
+  x.font = `700 ${fs}px -apple-system,Segoe UI,sans-serif`; const tw = x.measureText(txt).width;
+  x.fillStyle = 'rgba(20,18,16,.72)'; x.fillRect(fs * .6, RM.ih - fs * 2.2, tw + fs * 1.2, fs * 1.6); x.fillStyle = '#fff'; x.textBaseline = 'middle'; x.fillText(txt, fs * 1.2, RM.ih - fs * 1.4);
+  c.toBlob(b => b && saveFile((D.name || 'meuble').replace(/[\\/:*?"<>|]/g, '-') + ' - dans ma pièce.jpg', b), 'image/jpeg', .9);
+}
+
 async function roomExport() {
+  if (RM.step === 'free') return freeExport();
   if (!RM.cam) return;
   const c = document.createElement('canvas'); c.width = RM.iw; c.height = RM.ih; const x = c.getContext('2d');
   x.drawImage(RM.img, 0, 0); renderFurniture(x, 1, 0, 0);
