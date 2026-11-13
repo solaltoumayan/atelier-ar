@@ -1240,7 +1240,7 @@ function brAdopt() {
 // petit dessin d'un modèle : un L avec ses cotes
 function brSvg(m, big) {
   const a = +m.a || 0, l = +m.l || 0, W = big ? 150 : 34, H = big ? 120 : 28, k = Math.min((W - (big ? 40 : 6)) / Math.max(l, 1), (H - (big ? 30 : 6)) / Math.max(a, 1)), x0 = big ? 22 : 3, y0 = big ? 10 : 3, th = big ? 5 : 3, c = brCol(m.col);
-  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="vertical-align:middle;flex:none"><path d="M${x0} ${y0}V${y0 + a * k}H${x0 + l * k}" fill="none" stroke="${c}" stroke-width="${th}" stroke-linejoin="miter"/>`;
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="vertical-align:middle;flex:none">${m.col === 'blanc' ? `<path d="M${x0} ${y0}V${y0 + a * k}H${x0 + l * k}" fill="none" stroke="#9b9488" stroke-width="${th + 2}" stroke-linejoin="miter"/>` : ''}<path d="M${x0} ${y0}V${y0 + a * k}H${x0 + l * k}" fill="none" stroke="${c}" stroke-width="${th}" stroke-linejoin="miter"/>`;
   if (big && a && l) s += `<text x="${x0 - 5}" y="${y0 + a * k / 2}" font-size="10" text-anchor="end" dominant-baseline="middle" fill="#7a6e60">${a}</text><text x="${x0 + l * k / 2}" y="${y0 + a * k + 14}" font-size="10" text-anchor="middle" fill="#7a6e60">${l}</text>`;
   return s + '</svg>';
 }
@@ -1261,18 +1261,21 @@ function brPickBind(P, type, pick, back) {
 // catalogue : favoris, mes modèles, Leroy Merlin
 function brModelsDialog(after, opt = {}) {
   brAdopt(); const fav = brFav(), used = brUsage(), mine = brModels();
-  const tab = opt.tab || (brAll().some(m => fav.has(m.id) && (!opt.type || m.type === opt.type)) ? 'fav' : mine.some(m => !opt.type || m.type === opt.type) ? 'mine' : 'lm');
+  const sh = opt.show || opt.type, tab = opt.tab || (brAll().some(m => fav.has(m.id) && (!sh || m.type === sh)) ? 'fav' : mine.some(m => !sh || m.type === sh) ? 'mine' : 'lm');
   const src = { fav: brAll().filter(m => fav.has(m.id)), mine, lm: LM_BR }[tab];
   const row = m => `<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line)"><span style="background:#fffdf8;border-radius:6px;display:inline-flex">${brSvg(m)}</span><div style="flex:1;min-width:0"><b>${esc(m.name)}</b>${m.lm ? ' <span style="font-size:10px;color:#fff;background:#78be20;border-radius:4px;padding:1px 4px">LM</span>' : ''}${used[m.id] ? ` <span style="font-size:11px;color:var(--mute)">· ${used[m.id]} dans ce meuble</span>` : ''}<div style="font-size:12px;color:var(--mute)">${brDesc(m)}${m.url ? ` · <a href="${m.url}" target="_blank" rel="noopener" style="color:var(--acc)">voir ↗</a>` : ''}</div></div>
-    <button class="btn" data-fav="${m.id}" title="Favori" style="font-size:18px;color:${fav.has(m.id) ? '#e8a400' : '#b8ab98'}">${fav.has(m.id) ? '★' : '☆'}</button><button class="btn" data-bre="${m.id}" title="${m.lm ? 'Copier dans mes modèles pour l\'ajuster' : 'Modifier'}">${m.lm ? '⧉' : '✎'}</button>${opt.pick ? `<button class="btn pri" data-pick="${m.id}">Choisir</button>` : ''}</div>`;
-  const types = opt.type ? [opt.type] : ['mur', 'asm'];
+    <button class="btn" data-fav="${m.id}" title="Favori" style="font-size:18px;color:${fav.has(m.id) ? '#e8a400' : '#b8ab98'}">${fav.has(m.id) ? '★' : '☆'}</button><button class="btn" data-bre="${m.id}" title="${m.lm ? 'Copier dans mes modèles pour l\'ajuster' : 'Modifier'}">${m.lm ? '⧉' : '✎'}</button>${opt.pick && m.type === opt.type ? `<button class="btn pri" data-pick="${m.id}">Choisir</button>` : ''}</div>`;
+  const show = opt.show || opt.type, types = show ? [show] : ['mur', 'asm'];
   const body = types.map(t => { const L = src.filter(m => m.type === t); return `${types.length > 1 ? `<div class="sec">${BR_TYPE[t]}</div>` : ''}${L.map(row).join('') || `<div style="color:var(--mute);font-size:13px;margin:6px 0">${tab === 'fav' ? 'Aucun favori : touche ☆ sur une équerre pour la garder ici.' : 'Aucun modèle pour l\'instant.'}</div>`}${tab === 'mine' ? `<div class="row"><button class="btn" data-brn="${t}">＋ Nouveau modèle</button></div>` : ''}`; }).join('');
-  openModal(`<h2>${opt.type ? BR_TYPE[opt.type] : 'Mes équerres'}<button class="btn" data-close>✕</button></h2>
+  openModal(`<h2>Équerres<button class="btn" data-close>✕</button></h2>
+    <div class="seg" style="margin-bottom:6px">${[['mur', '📐 Murales (mur)'], ['asm', '🔩 Assemblage (petites)']].map(([k, l]) => `<button data-show="${k}" class="${show === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     <div class="seg" style="margin-bottom:6px">${[['fav', '⭐ Favoris'], ['mine', 'Mes modèles'], ['lm', '🏬 Leroy Merlin']].map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}</div>
     ${tab === 'lm' ? '<div style="font-size:12px;color:var(--mute);line-height:1.4">Équerres courantes de leroymerlin.fr (relevé du 13/11/2026). Vérifie les mesures en magasin ; « ≈ » = largeur estimée. ⧉ = la copier dans « Mes modèles » pour l\'ajuster.</div>' : ''}
+    ${opt.pick && show && show !== opt.type ? `<div style="font-size:12px;color:#b54708;line-height:1.4;margin:4px 0">${show === 'asm' ? 'Ces petites équerres se posent entre deux planches : 🔨 Construire → 🔩 Vis & équerres.' : 'Ces équerres se posent au mur : 🔨 Construire → 📐 Équerres murales.'} Ici tu peux les mettre en ☆ favoris.</div>` : ''}
     ${tab === 'lm' ? '' : '<div style="font-size:12px;color:var(--mute);line-height:1.4">Aucune équerre n\'est posée tant que tu ne l\'as pas choisie et placée toi-même.</div>'}${body}`);
   const box = $('#mbox'), again = o => brModelsDialog(after, { ...opt, ...o }), back = () => { again({ tab: 'mine' }); if (after) after(); };
   box.querySelectorAll('[data-tab]').forEach(x => x.onclick = () => again({ tab: x.dataset.tab }));
+  box.querySelectorAll('[data-show]').forEach(x => x.onclick = () => again({ tab, show: show === x.dataset.show && !opt.type ? null : x.dataset.show }));
   box.querySelectorAll('[data-fav]').forEach(x => x.onclick = () => { const on = brFavToggle(x.dataset.fav); toast(on ? '★ Ajoutée aux favoris' : 'Retirée des favoris'); again({ tab }); if (after) after(); });
   box.querySelectorAll('[data-pick]').forEach(x => x.onclick = () => opt.pick(brModel(x.dataset.pick)));
   box.querySelectorAll('[data-brn]').forEach(x => x.onclick = () => brModelForm(x.dataset.brn, null, back));
