@@ -1206,6 +1206,13 @@ const LM_BR = [
   ['85002152', 'mur', 'Zinguée 20,5 × 25', 205, 250, 30, { col: 'acier', wq: 1, u: 'equerre-de-fixation-murale-acier-zingue-argent-h-20-5-x-p-25-cm-85002152' }],
   ['85002149', 'mur', 'Zinguée 32,3 × 50', 323, 500, 35, { col: 'acier', wq: 1, u: 'equerre-de-fixation-murale-acier-zingue-argent-h-32-3-x-p-50-cm-85002149' }],
   ['85002132', 'mur', 'Bois verni 15 × 20', 150, 200, 30, { col: 'bois', wq: 1, u: 'equerre-de-fixation-murale-bois-verni-beige-h-15-x-p-20-cm-85002132' }],
+  ['', 'asm', 'Alberts mini 25 × 25 (larg. 14)', 25, 25, 14, { h: 2, sc: '3,5 × 16', u: 'equerre-assemblage-acier-galvanise-l-50-x-h-50-x-l-15-mm-gah-alberts-64003191' }],
+  ['', 'asm', 'Alberts mini 30 × 30 (larg. 14)', 30, 30, 14, { h: 2, sc: '3,5 × 16', u: 'equerre-assemblage-acier-galvanise-l-50-x-h-50-x-l-15-mm-gah-alberts-64003191' }],
+  ['67553920', 'asm', 'Hettich d\'angle blanche 30 (lot de 20)', 30, 30, 15, { col: 'blanc', wq: 1, sc: '4 × 16', u: 'lot-de-20-equerre-angle-blanc-9100403-hettich-l-30-mm-67553920' }],
+  ['67553934', 'asm', 'Hettich d\'angle blanche 40 (lot de 20)', 40, 40, 15, { col: 'blanc', wq: 1, sc: '4 × 16', u: 'lot-de-20-equerre-angle-blanc-hettich-l-40-mm-67553934' }],
+  ['64003191', 'asm', 'Alberts étroite 50 × 50 (larg. 15)', 50, 50, 15, { h: 2, u: 'equerre-assemblage-acier-galvanise-l-50-x-h-50-x-l-15-mm-gah-alberts-64003191' }],
+  ['67554816', 'asm', 'Hettich de chaise zinguée 50 (lot de 20)', 50, 50, 15, { wq: 1, sc: '4 × 16', u: 'lot-de-20-equerres-de-chaise-acier-zingue-hettich-l-50-mm-67554816' }],
+  ['82347339', 'asm', 'Équerre de chaise zinguée 60 (lot de 20)', 60, 60, 15, { h: 2, u: '20-equerres-de-chaise-fer-zingue-h-6-cm-82347339' }],
   ['64003345', 'asm', 'Alberts large 40 × 40', 40, 40, 40, { h: 2, u: 'equerre-large-acier-galvanise-l-40-x-h-40-x-l-40-mm-alberts-64003345' }],
   ['66957744', 'asm', 'Alberts 50 × 50 (lot de 25)', 50, 50, 40, { h: 4, u: 'equerre-de-fixation-acier-galvanise-50x50x40-mm-alberts-66957744' }],
   ['66957751', 'asm', 'Alberts 60 × 60 (lot de 15)', 60, 60, 40, { h: 6, sc: '4 × 30', u: 'equerre-de-fixation-acier-galvanise-60x60x40-mm-alberts-66957751' }],
@@ -1214,7 +1221,7 @@ const LM_BR = [
   ['437031', 'asm', 'Alberts renforcée 105 × 105', 105, 105, 90, { h: 11, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-105x105x90-mm-alberts-437031' }],
   ['79783032', 'asm', 'Large blanche 40 × 40 (pack de 50)', 40, 40, 40, { col: 'blanc', u: 'equerre-acier-large-40x40-mm-79783032' }],
   ['82347353', 'asm', 'Équerre de chaise zinguée 40', 40, 40, 15, { h: 2, u: 'equerre-de-chaise-fer-zingue-h-4-cm-82347353' }],
-].map(([ref, type, name, a, l, w, o]) => ({ id: 'lm-' + (ref || name.replace(/[^a-z0-9]+/gi, '').toLowerCase()), lm: 1, ref, type, name, a, l, w, h: o.h || 2, sc: o.sc || '', col: o.col || 'acier', kg: o.kg, wq: o.wq, url: LMU(o.u) }));
+].map(([ref, type, name, a, l, w, o]) => ({ id: 'lm-' + (ref || name.replace(/[^a-z0-9]+/gi, '').toLowerCase()), lm: 1, ref, type, name, a, l, w, h: o.h || 2, sc: o.sc || '', col: o.col || 'acier', kg: o.kg, wq: o.wq, url: LMU(o.u) })).sort((x, y) => x.type === y.type ? x.a - y.a || x.l - y.l : x.type === 'mur' ? -1 : 1);
 const brAll = () => [...brModels(), ...LM_BR];
 const brFav = () => new Set(LS.get('atelier.brfav') || []);
 function brFavToggle(id) { const f = brFav(); f.has(id) ? f.delete(id) : f.add(id); LS.set('atelier.brfav', [...f]); return f.has(id); }
