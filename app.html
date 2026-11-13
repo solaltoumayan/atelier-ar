@@ -723,7 +723,7 @@ function partsCut() {
     if (p.src === 'pin') pieces.push({ code: 'Pi', name: `Pied en pin ${fmt(p.w)} × ${fmt(p.w)}`, q, L: p.h, w: p.w, t: p.w, sec: 'tass' });
     else buy(`Pied ${LEG_SHAPES[p.shape] || 'droit'} · ${fmt(p.h)} cm`, q);
   }
-  { let wall = 0; const wood = {}; for (const p of parts('murale')) { buy(`Équerre murale ${p.mn ? `« ${p.mn} » ` : ''}${p.wa} × ${p.wl} mm`, 1); const h = p.mh || 2; wall += h; const k = `Vis à bois${p.msc ? ' ' + p.msc : ''} pour fixer l'étagère sur les équerres`; wood[k] = (wood[k] || 0) + h; } if (wall) { buy('Vis + chevilles adaptées à ton mur (côté mur des équerres)', wall); for (const [k, q] of Object.entries(wood)) buy(k, q); } }
+  { for (const p of parts('murale')) buy(`Équerre murale ${p.mn ? `« ${p.mn} » ` : ''}${p.wa} × ${p.wl} mm`, 1); for (const o of wallFixList()) buy(o.txt, o.q); }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); pieces.push({ code: 'Ta', name: `Tasseau ${fmt(p.s)} × ${fmt(p.s)}`, q: 1, L: g.L, w: p.s, t: p.s, sec: 'tass' }); }
   for (const p of parts('dos')) {
     const o = outerRect(p.a), W_ = o.x1 - o.x0, H_ = o.y1 - o.y0;
@@ -1213,26 +1213,26 @@ const LM_BR = [
   ['', 'asm', 'Alberts mini 30 × 30 (larg. 14)', 30, 30, 14, { h: 2, sc: '3,5 × 16', u: 'equerre-assemblage-acier-galvanise-l-50-x-h-50-x-l-15-mm-gah-alberts-64003191' }],
   ['67553920', 'asm', 'Hettich d\'angle blanche 30 (lot de 20)', 30, 30, 15, { col: 'blanc', wq: 1, sc: '4 × 16', u: 'lot-de-20-equerre-angle-blanc-9100403-hettich-l-30-mm-67553920' }],
   ['67553934', 'asm', 'Hettich d\'angle blanche 40 (lot de 20)', 40, 40, 15, { col: 'blanc', wq: 1, sc: '4 × 16', u: 'lot-de-20-equerre-angle-blanc-hettich-l-40-mm-67553934' }],
-  ['64003191', 'asm', 'Alberts étroite 50 × 50 (larg. 15)', 50, 50, 15, { h: 2, u: 'equerre-assemblage-acier-galvanise-l-50-x-h-50-x-l-15-mm-gah-alberts-64003191' }],
+  ['64003191', 'asm', 'Alberts étroite 50 × 50 (larg. 15)', 50, 50, 15, { hd: 5, h: 2, u: 'equerre-assemblage-acier-galvanise-l-50-x-h-50-x-l-15-mm-gah-alberts-64003191' }],
   ['67554816', 'asm', 'Hettich de chaise zinguée 50 (lot de 20)', 50, 50, 15, { wq: 1, sc: '4 × 16', u: 'lot-de-20-equerres-de-chaise-acier-zingue-hettich-l-50-mm-67554816' }],
   ['82347339', 'asm', 'Équerre de chaise zinguée 60 (lot de 20)', 60, 60, 15, { h: 2, u: '20-equerres-de-chaise-fer-zingue-h-6-cm-82347339' }],
-  ['64003345', 'asm', 'Alberts large 40 × 40', 40, 40, 40, { h: 2, u: 'equerre-large-acier-galvanise-l-40-x-h-40-x-l-40-mm-alberts-64003345' }],
-  ['66957744', 'asm', 'Alberts 50 × 50 (lot de 25)', 50, 50, 40, { h: 4, u: 'equerre-de-fixation-acier-galvanise-50x50x40-mm-alberts-66957744' }],
+  ['64003345', 'asm', 'Alberts large 40 × 40', 40, 40, 40, { hd: 5, h: 2, u: 'equerre-large-acier-galvanise-l-40-x-h-40-x-l-40-mm-alberts-64003345' }],
+  ['66957744', 'asm', 'Alberts 50 × 50 (lot de 25)', 50, 50, 40, { hd: 5, h: 4, u: 'equerre-de-fixation-acier-galvanise-50x50x40-mm-alberts-66957744' }],
   ['66957751', 'asm', 'Alberts 60 × 60 (lot de 15)', 60, 60, 40, { h: 6, sc: '4 × 30', u: 'equerre-de-fixation-acier-galvanise-60x60x40-mm-alberts-66957751' }],
-  ['66957765', 'asm', 'Alberts renforcée 70 × 70 (lot de 12)', 70, 70, 55, { h: 8, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-70x70x55-mm-alberts-66957765' }],
-  ['437024', 'asm', 'Alberts renforcée 90 × 90', 90, 90, 65, { h: 9, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-90x90x65-mm-alberts-437024' }],
-  ['437031', 'asm', 'Alberts renforcée 105 × 105', 105, 105, 90, { h: 11, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-105x105x90-mm-alberts-437031' }],
+  ['66957765', 'asm', 'Alberts renforcée 70 × 70 (lot de 12)', 70, 70, 55, { hd: 5, h: 8, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-70x70x55-mm-alberts-66957765' }],
+  ['437024', 'asm', 'Alberts renforcée 90 × 90', 90, 90, 65, { hd: 5, h: 9, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-90x90x65-mm-alberts-437024' }],
+  ['437031', 'asm', 'Alberts renforcée 105 × 105', 105, 105, 90, { hd: 5, h: 11, sc: '5 × 40', u: 'equerre-de-fixation-acier-galvanise-105x105x90-mm-alberts-437031' }],
   ['79783032', 'asm', 'Large blanche 40 × 40 (pack de 50)', 40, 40, 40, { col: 'blanc', u: 'equerre-acier-large-40x40-mm-79783032' }],
   ['82347353', 'asm', 'Équerre de chaise zinguée 40', 40, 40, 15, { h: 2, u: 'equerre-de-chaise-fer-zingue-h-4-cm-82347353' }],
-].map(([ref, type, name, a, l, w, o]) => ({ id: 'lm-' + (ref || name.replace(/[^a-z0-9]+/gi, '').toLowerCase()), lm: 1, ref, type, name, a, l, w, h: o.h || 2, sc: o.sc || '', col: o.col || 'acier', kg: o.kg, wq: o.wq, url: LMU(o.u) })).sort((x, y) => x.type === y.type ? x.a - y.a || x.l - y.l : x.type === 'mur' ? -1 : 1);
+].map(([ref, type, name, a, l, w, o]) => ({ id: 'lm-' + (ref || name.replace(/[^a-z0-9]+/gi, '').toLowerCase()), lm: 1, ref, type, name, a, l, w, h: o.h || 2, hd: o.hd || (type === 'asm' ? 4.5 : 5), sc: o.sc || '', col: o.col || 'acier', kg: o.kg, wq: o.wq, url: LMU(o.u) })).sort((x, y) => x.type === y.type ? x.a - y.a || x.l - y.l : x.type === 'mur' ? -1 : 1);
 const brAll = () => [...brModels(), ...LM_BR];
 const brFav = () => new Set(LS.get('atelier.brfav') || []);
 function brFavToggle(id) { const f = brFav(); f.has(id) ? f.delete(id) : f.add(id); LS.set('atelier.brfav', [...f]); return f.has(id); }
 const brModel = id => id ? brAll().find(m => m.id === id) || null : null;
 const BRCUR = { mur: null, asm: null }; // modèle choisi pour poser : aucun tant que tu n'as pas choisi
 const BR_TYPE = { mur: '📐 Équerres murales (contre le mur)', asm: '🔩 Équerres d\'assemblage (entre deux planches)' };
-function wallApply(p, m) { p.m = m.id; p.mn = m.name; p.wa = m.a; p.wl = m.l; p.ww = m.w; p.mh = m.h; p.msc = m.sc; p.col = m.col; }
-function asmApply(b, m) { b.m = m.id; b.mn = m.name; b.a = m.a; b.l = m.l; b.w = m.w; b.h = m.h; b.sc = m.sc; b.col = m.col; }
+function wallApply(p, m) { p.m = m.id; p.mn = m.name; p.wa = m.a; p.wl = m.l; p.ww = m.w; p.mh = m.h; p.msc = m.sc; p.col = m.col; p.mhd = m.hd; p.mt = m.type; }
+function asmApply(b, m) { b.m = m.id; b.mn = m.name; b.a = m.a; b.l = m.l; b.w = m.w; b.h = m.h; b.sc = m.sc; b.col = m.col; b.hd = m.hd; }
 // un meuble ouvert sur un autre appareil : on récupère ses modèles dans le catalogue
 function brAdopt() {
   const ms = brModels(), have = new Set(brAll().map(m => m.id)); let add = false;
@@ -1262,7 +1262,7 @@ function brSvg(m, big) { // équerre vue de ¾ : aile 1 debout, aile 2 couchée 
   if (big) s += `<text x="${(X + ww + 5).toFixed(1)}" y="${(Y - A / 2).toFixed(1)}" font-size="10" dominant-baseline="middle" fill="#7a6e60">${a}</text><text x="${(X + ww + Lx / 2 + 6).toFixed(1)}" y="${(Y + Ly / 2 + 12).toFixed(1)}" font-size="10" fill="#7a6e60">${l}</text>`;
   return s + '</svg>';
 }
-const brDesc = m => `${m.type === 'mur' ? `mur ${m.a} × étagère ${m.l}` : `${m.a} × ${m.l}`} mm · larg. ${m.wq ? '≈' : ''}${m.w}${m.lm ? '' : ` · ${m.h} trou${m.h > 1 ? 's' : ''}/aile`}${m.kg ? ` · jusqu'à ${m.kg} kg` : ''}${m.sc ? ` · vis ${esc(m.sc)}` : ''}${m.ref ? ` · réf. ${m.ref}` : ''}`;
+const brDesc = m => `${m.type === 'mur' ? `mur ${m.a} × étagère ${m.l}` : `${m.a} × ${m.l}`} mm · larg. ${m.wq ? '≈' : ''}${m.w}${m.lm ? '' : ` · ${m.h} trou${m.h > 1 ? 's' : ''}/aile`}${m.hd ? ` · trous Ø ${String(m.hd).replace('.', ',')}` : ''}${m.kg ? ` · jusqu'à ${m.kg} kg` : ''}${m.sc ? ` · vis ${esc(m.sc)}` : ''}${m.ref ? ` · réf. ${m.ref}` : ''}`;
 // rangée de choix de modèle (panneaux)
 function brPickHtml(type, curId) { // au mur on peut aussi prendre une petite équerre d'assemblage en soutien
   const fav = brFav(), all = brAll().filter(m => m.type === type || (type === 'mur' && m.type === 'asm' && (fav.has(m.id) || !m.lm))).sort((a, b) => (a.type === type ? 0 : 1) - (b.type === type ? 0 : 1)), L = [...all.filter(m => fav.has(m.id)), ...all.filter(m => !fav.has(m.id) && !m.lm)];
@@ -1303,7 +1303,7 @@ function brModelsDialog(after, opt = {}) {
 function brUsage() { const u = {}; for (const p of parts('murale')) if (p.m) u[p.m] = (u[p.m] || 0) + 1; for (const b of Object.values(D.brackets || {})) if (b.m) u[b.m] = (u[b.m] || 0) + b.n * brSidesN(b); return u; }
 const brSidesN = b => b.s === 'both' ? 2 : 1;
 function brModelForm(type, m, done) {
-  const isNew = !m || !!m.lm; m = m ? (m.lm ? (({ lm, url, ref, kg, wq, ...r }) => ({ ...r, id: uid() }))(m) : { ...m }) : { id: uid(), type, name: '', a: '', l: '', w: '', h: 2, sc: '', col: 'acier' };
+  const isNew = !m || !!m.lm; m = m ? (m.lm ? (({ lm, url, ref, kg, wq, ...r }) => ({ ...r, id: uid() }))(m) : { ...m }) : { id: uid(), type, name: '', a: '', l: '', w: '', h: 2, hd: '', sc: '', col: 'acier' }; if (m.hd == null) m.hd = '';
   const n = (k, lab, ph) => `<label class="f">${lab}<input data-bf="${k}" inputmode="numeric" value="${m[k] === '' ? '' : m[k]}" placeholder="${ph}"></label>`;
   const draw = () => {
     const mur = m.type === 'mur';
@@ -1311,7 +1311,7 @@ function brModelForm(type, m, done) {
       ${isNew ? `<div class="seg" style="margin-bottom:8px"><button data-bt="mur" class="${mur ? 'on' : ''}">📐 Murale</button><button data-bt="asm" class="${!mur ? 'on' : ''}">🔩 Assemblage</button></div>` : ''}
       <div style="display:flex;gap:10px;align-items:center"><div id="brPrev">${brSvg(m, true)}</div><div style="font-size:12px;color:var(--mute);line-height:1.45">Mesure ton équerre (en mm), ou recopie les cotes de l'étiquette. ${mur ? 'Aile 1 = contre le mur (verticale), aile 2 = sous l\'étagère.' : 'Aile 1 = sur la planche qu\'on traverse, aile 2 = sur l\'autre planche.'}</div></div>
       <label class="f">Nom (comme tu l'appelles)<input data-bf="name" value="${esc(m.name)}" placeholder="${mur ? 'ex : Équerre noire Leroy Merlin' : 'ex : Petite équerre 40'}"></label>
-      <div class="grid2">${n('a', mur ? 'Aile 1 · contre le mur (mm)' : 'Aile 1 (mm)', 'ex : 125')}${n('l', mur ? 'Aile 2 · sous l\'étagère (mm)' : 'Aile 2 (mm)', 'ex : 150')}${n('w', 'Largeur (mm)', 'ex : 30')}${n('h', 'Trous par aile', 'ex : 2')}</div>
+      <div class="grid2">${n('a', mur ? 'Aile 1 · contre le mur (mm)' : 'Aile 1 (mm)', 'ex : 125')}${n('l', mur ? 'Aile 2 · sous l\'étagère (mm)' : 'Aile 2 (mm)', 'ex : 150')}${n('w', 'Largeur (mm)', 'ex : 30')}${n('h', 'Trous par aile', 'ex : 2')}${n('hd', 'Ø des trous (mm)', 'ex : 4,5')}</div>
       <label class="f">Vis à utiliser (facultatif)<input data-bf="sc" value="${esc(m.sc || '')}" placeholder="ex : 4 × 30"></label>
       <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Couleur</div>
       <div class="seg">${Object.entries(BR_COL).map(([k, [lab, c]]) => `<button data-bc="${k}" class="${m.col === k ? 'on' : ''}"><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};border:1px solid #0002;margin-right:4px"></i>${lab}</button>`).join('')}</div>
@@ -1322,7 +1322,7 @@ function brModelForm(type, m, done) {
     box.querySelectorAll('[data-bc]').forEach(x => x.onclick = () => { m.col = x.dataset.bc; draw(); });
     $('#bfOk').onclick = () => {
       for (const k of ['a', 'l', 'w']) if (!(m[k] > 0)) return toast('Il manque les mesures : aile 1, aile 2 et largeur');
-      m.h = Math.max(1, Math.round(+m.h || 1)); m.name = (m.name || '').trim() || `Équerre ${m.a} × ${m.l}`;
+      m.h = Math.max(1, Math.round(+m.h || 1)); m.hd = +m.hd > 0 ? +m.hd : (m.type === 'asm' ? 4.5 : 5); m.name = (m.name || '').trim() || `Équerre ${m.a} × ${m.l}`;
       const ms = brModels(), i = ms.findIndex(x => x.id === m.id); if (i >= 0) ms[i] = m; else ms.push(m); brSaveModels(ms);
       // les équerres déjà posées avec ce modèle suivent la modification
       let hit = false; for (const p of parts('murale')) if (p.m === m.id) { wallApply(p, m); hit = true; } for (const b of Object.values(D.brackets || {})) if (b.m === m.id) { asmApply(b, m); hit = true; }
@@ -1378,6 +1378,7 @@ function wallPanelHtml(p) {
     <div class="grid2" style="margin-top:8px">${field('Depuis le bout gauche (cm)', 'woff', p.off)}${field('Depuis le bout droit (cm)', 'woffR', b.L - p.off)}</div>
     <div style="font-size:12px;font-weight:700;margin:8px 0 0">Modèle${p.mn ? ` : ${esc(p.mn)}` : ` : ${p.wa} × ${p.wl} mm`}</div>
     ${brPickHtml('mur', p.m)}
+    ${wallFixLine(p)}${wallTypeSeg()}
     ${warn.length ? `<div style="font-size:12px;color:#b42318;margin-top:6px;line-height:1.4">⚠ ${warn.join('<br>⚠ ')}</div>` : ''}
     <div class="row"><button class="btn" id="wSym">⇔ Équerre symétrique</button><button class="btn" id="wAll">Ce modèle partout</button><button class="btn" id="wPlan">📋 Plan de pose</button></div>`;
 }
@@ -1387,10 +1388,52 @@ function wallPanelBind(P, p, set) {
   brPickBind(P, 'mur', m => { if (!m) return; BRCUR.mur = m.id; set(() => wallApply(p, m)); }, () => changed(false));
   $('#wSym').onclick = () => set(() => { const q = { ...p, id: uid(), off: b.L - p.off }; if (Math.abs(q.off - p.off) < 5) return toast('Elle est déjà au milieu'); D.parts.push(q); selPart = q; });
   $('#wAll').onclick = () => set(() => { const m = brModel(p.m); for (const q of parts('murale')) { if (m) wallApply(q, m); else { q.wa = p.wa; q.wl = p.wl; q.ww = p.ww; q.col = p.col; } } toast('Toutes les équerres murales ont ce modèle'); });
+  wallTypeBind(P, () => changed(false));
   const sib = () => parts('murale').filter(q => q.b === p.b).sort((a, c) => a.off - c.off), hwOf = q => (q.ww || WALL_W) / 2;
   $('#wCen').onclick = () => set(() => { const L = sib(), lo = L[0].off, hi = L[L.length - 1].off, d = Math.round(b.L / 2 - (lo + hi) / 2); for (const q of L) q.off = clamp(q.off + d, hwOf(q), b.L - hwOf(q)); toast(L.length > 1 ? 'Groupe centré sur l\'étagère' : `Équerre au milieu : ${fmt(b.L / 2)} cm`); });
   if ($('#wSpread')) $('#wSpread').onclick = () => set(() => { const L = sib(), n = L.length; L.forEach((q, i) => q.off = clamp(Math.round(b.L * (i + .5) / n), hwOf(q), b.L - hwOf(q))); toast(`${n} équerres : ${fmt(b.L / (2 * n))} cm des bouts, ${fmt(b.L / n)} cm entre elles`); });
   $('#wPlan').onclick = () => { debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 50); };
+}
+// ---- Fixations des équerres murales : vis côté bois, chevilles + vis côté mur ----
+// Données Fischer DuoPower (foret = Ø cheville, vis Ø 4–5 pour 6×30, 4,5–6 pour 8×40) et Molly M4/M5 pour le placo.
+const WALLS = { beton: ['🧱 Béton / brique pleine', 'Béton, brique pleine'], creux: ['🏚 Brique creuse / parpaing', 'Brique creuse, parpaing'], placo: ['⬜ Placo', 'Plaque de plâtre (BA13)'], bois: ['🪵 Bois', 'Mur ou montant en bois'] };
+const wallType = () => S().wallType || null;
+const brHole = p => p.mhd || (p.mt === 'asm' ? 4.5 : 5); // Ø des trous de l'équerre
+function wallFix(p) {
+  const hd = brHole(p), ds = hd >= 5.5 ? 5 : hd >= 5 ? 4.5 : hd >= 4.5 ? 4 : 3.5, h = Math.max(1, Math.round(p.mh || 2));
+  const b = byId(p.b), t = (b && b.t) || S().t || 18, L = [10, 12, 13, 15, 16, 20, 25, 30].filter(x => x <= t - 2).pop() || 10;
+  const nWall = Math.min(h, p.wa >= 150 ? 3 : 2), nWood = Math.min(h, p.wl >= 150 ? 3 : 2), heavy = p.wa >= 200 || p.wl >= 250;
+  const wood = { n: nWood, txt: `Vis à bois tête fraisée ${fmt(Math.min(ds, 4.5) * 10).replace(',0', '')} × ${L}`, why: `${L} mm max : ta planche fait ${fmt(t * 10).replace(',0', '')} mm, plus longue elle ressort dessus` };
+  const wt = wallType(); let wall = null;
+  if (wt === 'bois') wall = { plug: null, screw: `Vis à bois ${fmt(Math.max(ds, 4) * 10).replace(',0', '')} × 40`, drill: `avant-trou Ø ${ds >= 4.5 ? 3 : '2,5'} mm`, note: 'Visse dans un montant ou une planche épaisse, pas dans un lambris fin.' };
+  else if (wt === 'placo') {
+    const m5 = hd >= 5.5; wall = { plug: m5 ? 'Cheville métallique Molly M5 × 52 (vis fournie)' : 'Cheville métallique Molly M4 × 46 (vis fournie)', screw: null, drill: `foret Ø ${m5 ? 10 : 8} mm`, note: `Ouvre-la avec une pince à Molly. Si tu tombes sur un montant métallique, une vis à tôle suffit.${hd < 4.5 ? ' Les trous de l\'équerre sont petits pour une vis M4 : agrandis-les à 4,5 mm.' : ''}` };
+  } else if (wt) {
+    const big = ds >= 4.5 && (heavy || ds >= 5), hollow = wt === 'creux';
+    const plug = hollow ? (big ? 'Fischer DuoPower 8 × 65' : 'Fischer DuoPower 6 × 50') : big ? 'Fischer DuoPower 8 × 40' : ds < 4 ? 'Fischer DuoPower 5 × 25' : 'Fischer DuoPower 6 × 30';
+    const d = +plug.match(/(\d+) ×/)[1], pl = +plug.match(/× (\d+)/)[1], sd = big ? 5 : ds < 4 ? 3.5 : Math.min(ds, 4.5);
+    const ref = { 'Fischer DuoPower 8 × 40': ' (Leroy Merlin réf. 80125281, lot de 8 avec vis)', 'Fischer DuoPower 5 × 25': ' (Leroy Merlin réf. 81871818, lot de 45)' }[plug] || '';
+    wall = { plug: `Cheville ${plug}${ref}`, screw: `Vis ${fmt(sd * 10).replace(',0', '')} × ${pl + 10}`, drill: `foret Ø ${d} mm${hollow ? ' sans percussion' : ' béton'}, percer ${pl + 10} mm`, note: hollow ? 'Brique creuse : perce sans percussion pour ne pas casser les alvéoles.' : '' };
+  }
+  return { hd, ds, nWall, nWood, wood, wall, wt };
+}
+function wallTypeSeg() { const wt = wallType(); return `<div style="font-size:12px;font-weight:700;margin:8px 0 3px">Ton mur${wt ? '' : ' <span style="color:#b54708;font-weight:400">— choisis-le pour avoir tes chevilles et tes vis</span>'}</div><div class="seg" style="flex-wrap:wrap">${Object.entries(WALLS).map(([k, [l]]) => `<button data-wt="${k}" class="${wt === k ? 'on' : ''}">${l}</button>`).join('')}</div>`; }
+function wallTypeBind(root, after) { root.querySelectorAll('[data-wt]').forEach(x => x.onclick = () => { D.settings.wallType = x.dataset.wt; scheduleSave(); after(); }); }
+function wallFixLine(p) {
+  const f = wallFix(p), w = f.wall;
+  return `<div style="font-size:12px;line-height:1.5;margin-top:6px;background:#f6f1e8;border-radius:8px;padding:6px 8px"><b>Côté étagère :</b> ${f.nWood} × ${f.wood.txt}<br><b>Côté mur :</b> ${w ? `${f.nWall} × ${w.plug ? w.plug + (w.screw ? ' + ' + w.screw : '') : w.screw} · ${w.drill}` : '<i>choisis ton mur ci-dessous</i>'}</div>`;
+}
+// liste des fixations, regroupées, pour Débit / achats
+function wallFixList() {
+  const g = new Map(), add = (k, q, extra) => { const o = g.get(k) || { q: 0, ...extra }; o.q += q; g.set(k, o); };
+  for (const p of parts('murale')) {
+    const f = wallFix(p);
+    add(`${f.wood.txt} (côté étagère)`, f.nWood, { side: 'bois' });
+    if (f.wall) { if (f.wall.plug) add(f.wall.plug + ` · ${f.wall.drill}`, f.nWall, { side: 'mur' }); if (f.wall.screw) add(`${f.wall.screw} (côté mur${f.wall.plug ? ', avec la cheville' : ''})`, f.nWall, { side: 'mur' }); }
+  }
+  if (parts('murale').length && wallType() === 'placo') add('Pince à chevilles Molly (si tu n\'en as pas)', 1, { side: 'outil', once: true });
+  const ord = { mur: 0, bois: 1, outil: 2 };
+  return [...g.entries()].map(([txt, o]) => ({ txt, q: o.once ? 1 : o.q, side: o.side })).sort((x, y) => ord[x.side] - ord[y.side]);
 }
 // ---- plan de pose ----
 function wallPlan() {
@@ -1418,6 +1461,10 @@ function wallPlanHtml() {
     <div style="font-size:12px;color:var(--mute);line-height:1.45">Repère : trace au crayon un trait vertical sur le mur, là où ira le <b>bord gauche</b> du meuble. Toutes les distances partent de ce trait et du sol.</div>${wallLow(P) > 0 ? `<div style="color:#c92a2a;font-size:13px;margin-top:6px">⚠ Des équerres descendent sous le sol : indique à quelle hauteur est le bas du meuble (ou retire les équerres de l'étagère du bas).</div>` : ''}${wallSvg(P)}`;
   h += `<div style="font-weight:700;margin-top:6px">1. Les équerres</div><table><tr><th>N°</th><th>Haut de l'équerre<br>(depuis le sol)</th><th>Axe<br>(depuis le repère)</th><th>Taille</th></tr>` + P.br.map(o => `<tr><td><b style="color:#c92a2a">${o.n}</b></td><td class="num"><b>${fmt(o.hTop)} cm</b></td><td class="num"><b>${fmt(o.x)} cm</b></td><td style="white-space:nowrap">${o.size}</td></tr>`).join('') + `</table>`;
   h += `<div style="font-size:13px;line-height:1.5;margin-top:6px">Pour chaque équerre : trace un <b>trait de niveau</b> à la hauteur indiquée, marque l'<b>axe</b>, pose le <b>haut de l'équerre sur le trait</b>, centrée sur l'axe, marque les trous, perce, cheville, visse. Vérifie au niveau à bulle avant de serrer.</div>`;
+  h += wallTypeSeg();
+  { const L = wallFixList(); h += `<div style="font-weight:700;margin-top:10px">Vis et chevilles</div>` + (L.length ? `<table>${L.map(o => `<tr><td class="num"><b>${o.q}</b></td><td>${o.side === 'mur' ? '🧱 ' : o.side === 'bois' ? '🪵 ' : '🛠 '}${esc(o.txt)}</td></tr>`).join('')}</table>` : '');
+    const notes = [...new Set(parts('murale').map(p => wallFix(p)).map(f => f.wall && f.wall.note).filter(Boolean))], f0 = wallFix(parts('murale')[0]);
+    h += `<div style="font-size:12px;color:var(--mute);line-height:1.45;margin-top:4px">Côté étagère : ${esc(f0.wood.why)}. ${wallType() ? '' : '<b style="color:#b54708">Choisis ton mur ci-dessus pour les chevilles.</b>'}${notes.map(esc).join(' ')}</div>`; }
   h += `<div style="font-weight:700;margin-top:10px">2. Les étagères</div><table><tr><th>Étagère</th><th>Bout gauche<br>(depuis le repère)</th><th>Dessus<br>(depuis le sol)</th><th>Sur les équerres</th></tr>` + P.shelves.map(o => `<tr><td><span class="tag">${o.code}</span> ${esc(o.name)}</td><td class="num">${fmt(o.left)} cm</td><td class="num">${fmt(o.top)} cm</td><td>${o.ns.join(', ')}</td></tr>`).join('') + `</table>`;
   h += `<div style="font-size:13px;line-height:1.5;margin-top:6px">Pose l'étagère sur ses équerres, aligne son bout gauche sur la distance indiquée, et visse-la par-dessous dans les équerres.</div>`;
   return h;
@@ -1439,6 +1486,8 @@ function wallPlanPdf(doc, M, PW, PH) {
   y += 2; doc.setFontSize(9); for (const ln of doc.splitTextToSize('Trait de niveau à la hauteur indiquée, axe marqué depuis le repère, haut de l\'équerre sur le trait, centrée sur l\'axe. Marquer, percer, cheviller, visser ; vérifier au niveau à bulle.', PW - 2 * M)) { doc.text(ln, M, y); y += 4.5; }
   y += 4; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text('2. Les étagères', M, y); y += 5.5; doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
   for (const o of P.shelves) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.text(`${o.code}  ${o.name} : bout gauche à ${fmt(o.left)} cm du repère, dessus à ${fmt(o.top)} cm du sol, sur les équerres ${o.ns.join(', ')}`, M, y); y += 5.2; }
+  { const L = wallFixList(); if (L.length) { y += 4; if (y > PH - M - 20) { doc.addPage(); y = M + 4; } doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(0); doc.text(`Vis et chevilles${wallType() ? ' — mur : ' + WALLS[wallType()][1] : ' (type de mur non choisi)'}`, M, y); y += 5; doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+    for (const o of L) { if (y > PH - M) { doc.addPage(); y = M + 4; } for (const ln of doc.splitTextToSize(`${o.q} × ${o.txt}`, PW - 2 * M)) { doc.text(ln, M, y); y += 4.6; } } } }
 }
 
 // ---------- Dessin ----------
@@ -2665,6 +2714,7 @@ function debitDialog() {
     <p style="color:var(--mute);font-size:12px">Une jonction = un bout de planche contre la face d'une autre. Prévois quelques vis de plus.</p>`;
   openModal(h);
   $('#dPdf').onclick = exportPdf;
+  if ($('#wallPlan')) wallTypeBind($('#mbox'), () => { const sc = $('#mbox').scrollTop; debitDialog(); $('#mbox').scrollTop = sc; });
   { const wf = $('#mbox [data-k="wFloor"]'); if (wf) wf.onchange = () => { const v = parseCm(wf.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); D.settings.wallFloor = v; scheduleSave(); debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 30); }; }
   if ($('#dTools')) $('#dTools').onclick = e => { e.preventDefault(); closeModal(); toolsDialog(); };
   $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; for (const x of cd.parts.pieces) t += `${x.code}  ${x.q} × ${fmt(x.L)} cm  (${fmt(x.w)} × ${fmt(x.t)})  ${x.name}\n`; t += `Planches : ${nPlanks} × ${fmt(s.stock)} cm\nVis : ${cd.screws} × ${s.screwType}\n`; for (const b of cd.parts.buys) t += `${b.q} × ${b.txt}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
