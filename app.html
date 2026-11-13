@@ -983,13 +983,25 @@ const snapNorm = x => String(x).replace(/"show\w+":(true|false),?/g, '');
 function verDirty() { const v = verList().find(x => x.id === D.curVer); return !v || snapNorm(v.snap) !== snapNorm(curSnap()); }
 function verSave(name) {
   const n = verList().length + 1, v = { id: uid(), name: name || 'V' + n, at: Date.now(), snap: curSnap() };
-  verList().push(v); D.curVer = v.id; D.draft = null; scheduleSave(); renderPanel(); return v;
+  verList().push(v); D.curVer = v.id; drafts(); scheduleSave(); renderPanel(); return v;
 }
-function verUpdate(v) { v.snap = curSnap(); v.at = Date.now(); D.curVer = v.id; D.draft = null; scheduleSave(); renderPanel(); }
-function verOpen(id) { // passer à une version ; l'état en cours non enregistré est gardé en brouillon
-  if (id === 'draft') { if (!D.draft) return; const d = D.draft; pushUndo(); D.draft = null; restore(d.snap); D.curVer = d.from || null; changed(); return; }
+function verUpdate(v) { v.snap = curSnap(); v.at = Date.now(); D.curVer = v.id; drafts(); scheduleSave(); renderPanel(); }
+// brouillons : tout état modifié qu'on quitte est mis de côté (plusieurs, jamais écrasés)
+function drafts() { if (D.draft) { (D.drafts = D.drafts || []).unshift({ id: uid(), ...D.draft }); D.draft = null; } return D.drafts || (D.drafts = []); }
+const draftName = d => { const v = verList().find(x => x.id === d.from); return `✏ ${v ? v.name + ' modifiée' : 'Brouillon'}`; };
+function stashCurrent() {
+  if (!verDirty() || !D.boards.length) return;
+  const now = curSnap(), N = snapNorm(now);
+  if (drafts().some(d => snapNorm(d.snap) === N) || verList().some(v => snapNorm(v.snap) === N)) return;
+  drafts().unshift({ id: uid(), snap: now, from: D.curVer || null, at: Date.now() });
+  if (D.drafts.length > 8) D.drafts.length = 8;
+}
+function verOpen(id) { // passer à une version ou à un brouillon ; l'état en cours modifié n'est jamais perdu
+  stashCurrent();
+  if (id === 'draft') id = (drafts()[0] || {}).id;
+  const d = drafts().find(x => x.id === id);
+  if (d) { pushUndo(); D.drafts = D.drafts.filter(x => x !== d); restore(d.snap); D.curVer = d.from || null; changed(); return; }
   const v = verList().find(x => x.id === id); if (!v) return;
-  if (verDirty() && !(D.draft && D.draft.snap === curSnap())) D.draft = { snap: curSnap(), from: D.curVer || null, at: Date.now() };
   pushUndo(); restore(v.snap); D.curVer = v.id; changed();
 }
 function verThumb(snap, W = 64, H = 64) { // petite vue de face
@@ -1004,16 +1016,16 @@ const verDims = snap => { try { const bs = JSON.parse(snap).boards || []; if (!b
 function verChips(onSwitch) {
   if (!verList().length) return '';
   const dirty = verDirty(), chips = verList().map(v => `<button class="btn${D.curVer === v.id && !dirty ? ' on' : ''}" data-ver="${v.id}" style="padding:6px 11px;flex:none">${esc(v.name)}${D.curVer === v.id && dirty ? ' ✏' : ''}</button>`);
-  if (D.draft) chips.push(`<button class="btn" data-ver="draft" style="padding:6px 11px;flex:none">✏ Brouillon</button>`);
+  for (const d of drafts()) chips.push(`<button class="btn" data-ver="${d.id}" style="padding:6px 11px;flex:none;border-style:dashed">${esc(draftName(d))}</button>`);
   return `<div class="verbar" style="display:flex;gap:6px;overflow-x:auto;padding:2px 0 6px;align-items:center"><span style="font-size:12px;color:var(--mute);flex:none">Versions :</span>${chips.join('')}</div>`;
 }
 function bindVerChips(root, after) { root.querySelectorAll('[data-ver]').forEach(b => b.onclick = () => { verOpen(b.dataset.ver); after(); }); }
 function versionsDialog() {
   const vs = verList(), dirty = verDirty();
   openModal(`<h2>Versions · ${esc(D.name)}<button class="btn" data-close>✕</button></h2>
-    <p style="margin:0 0 8px;color:var(--mute);font-size:13px">Enregistre une version quand le meuble te plaît. Tu peux ensuite y revenir et les comparer sur ta photo (Pièce), en 3D ou avec la caméra.</p>
+    <p style="margin:0 0 8px;color:var(--mute);font-size:13px">Enregistre une version quand le meuble te plaît. Tu peux ensuite y revenir et les comparer sur ta photo (Pièce), en 3D ou avec la caméra. Si tu changes de version avec des modifs non enregistrées, elles sont mises de côté (✏) : rien n'est jamais perdu.</p>
     <div class="row" style="margin:0 0 10px"><button class="btn pri" id="vNew">📌 Enregistrer comme V${vs.length + 1}</button></div>
-    ${D.draft ? `<div class="it" style="display:flex;gap:10px;align-items:center;border:1px dashed var(--acc);border-radius:12px;padding:8px;margin-bottom:8px">${verThumb(D.draft.snap)}<div style="flex:1"><b>✏ Brouillon</b><small style="display:block;color:var(--mute)">État en cours mis de côté · ${new Date(D.draft.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</small></div><button class="btn" data-vo="draft">Reprendre</button></div>` : ''}
+    ${drafts().map(d => `<div class="it" style="display:flex;gap:10px;align-items:center;border:1px dashed var(--acc);border-radius:12px;padding:8px;margin-bottom:8px">${verThumb(d.snap)}<div style="flex:1;min-width:0"><b>${esc(draftName(d))}</b><small style="display:block;color:var(--mute)">Modifs mises de côté · ${new Date(d.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}</small><div class="row" style="margin-top:6px;gap:5px"><button class="btn" data-dro="${d.id}">Reprendre</button><button class="btn" data-drs="${d.id}">📌 En faire une version</button><button class="btn danger" data-drd="${d.id}">🗑</button></div></div></div>`).join('')}
     <div id="vList">${vs.length ? '' : '<p style="color:var(--mute)">Aucune version pour l\'instant.</p>'}</div>`);
   const L = $('#vList');
   [...vs].reverse().forEach(v => {
@@ -1029,7 +1041,9 @@ function versionsDialog() {
     L.appendChild(it);
   });
   $('#vNew').onclick = () => { const v = verSave(); versionsDialog(); toast(`${v.name} enregistrée`); };
-  document.querySelectorAll('#mbox [data-vo=draft]').forEach(b => b.onclick = () => { verOpen('draft'); closeModal(); toast('Brouillon repris'); });
+  document.querySelectorAll('#mbox [data-dro]').forEach(b => b.onclick = () => { verOpen(b.dataset.dro); closeModal(); toast('Modifs reprises'); });
+  document.querySelectorAll('#mbox [data-drs]').forEach(b => b.onclick = () => { const d = drafts().find(x => x.id === b.dataset.drs); if (!d) return; const v = { id: uid(), name: 'V' + (verList().length + 1), at: Date.now(), snap: d.snap }; verList().push(v); D.drafts = D.drafts.filter(x => x !== d); scheduleSave(); renderPanel(); versionsDialog(); toast(`${v.name} enregistrée`); });
+  document.querySelectorAll('#mbox [data-drd]').forEach(b => b.onclick = () => { if (!b.dataset.c) { b.dataset.c = 1; b.textContent = 'Supprimer ?'; return; } D.drafts = drafts().filter(x => x.id !== b.dataset.drd); scheduleSave(); renderPanel(); versionsDialog(); });
 }
 
 // ---------- Titre calligraphié (nom + version), fixe à l'écran, s'efface s'il touche le meuble ----------
@@ -1105,15 +1119,15 @@ function transformBoards(list, fx, fy, lr, ud, copy) {
 }
 function moveExtras(ex, lr, ud, cxm, cym, copy, newIds) {
   for (const k of ex.books) {
-    const n = copy ? { ...k, id: uid(), lk: undefined, seed: Math.floor(Math.random() * 997) } : k;
+    const n = copy ? { ...k, id: uid(), lk: undefined, seed: Math.floor(Math.random() * 997) } : k, ox = k.x;
     if (lr) n.x = Math.round((2 * cxm - (k.x + k.w)) * 10) / 10;
-    if (ud) { const y = dropOnShelf(n.x, n.x + n.w, 2 * cym - k.y, newIds); if (y == null) { if (!copy) D.books = D.books.filter(z => z !== k); continue; } n.y = y; }
+    if (ud) { const y = dropOnShelf(n.x, n.x + n.w, 2 * cym - k.y, newIds); if (y == null) { if (!copy) n.x = ox; continue; } n.y = y; } // pas d'étagère à l'arrivée : la déco reste où elle est (plus jamais effacée)
     if (copy) D.books.push(n);
   }
   for (const o of ex.objs) {
-    const n = copy ? { ...o, id: uid() } : o, w2 = o.h * ((OBJS[o.t] || {}).r || 1) / 2;
+    const n = copy ? { ...o, id: uid() } : o, ox = o.x, w2 = o.h * ((OBJS[o.t] || {}).r || 1) / 2;
     if (lr) n.x = Math.round((2 * cxm - o.x) * 10) / 10;
-    if (ud) { const y = dropOnShelf(n.x - w2, n.x + w2, 2 * cym - o.y, newIds); if (y == null) { if (!copy) D.objs = D.objs.filter(z => z !== o); continue; } n.y = y; }
+    if (ud) { const y = dropOnShelf(n.x - w2, n.x + w2, 2 * cym - o.y, newIds); if (y == null) { if (!copy) n.x = ox; continue; } n.y = y; }
     if (copy) D.objs.push(n);
   }
 }
