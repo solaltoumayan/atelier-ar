@@ -621,16 +621,16 @@ function objPointerDown(base, sx, sy, wx, wy, touch) {
 // Chaque élément est accroché à des planches (par leur id) : il suit tout seul quand le caisson bouge ou change de taille.
 // porte / tiroir / fond : a = { l, r, b, t } = montant gauche, montant droit, planche du bas, planche du haut de la case
 // pied / tasseau : b = planche (horizontale) qui le porte, side = 'l' | 'r' | 'c'
-const PT = { door: 'porte', drawer: 'tiroir', leg: 'pied', cleat: 'tasseau', back: 'dos' };
+const PT = { door: 'porte', drawer: 'tiroir', leg: 'pied', cleat: 'tasseau', back: 'dos', wall: 'murale' };
 const BUILD = [
   ['h', '━', 'Planche horizontale'], ['v', '┃', 'Planche verticale'], ['rect', '▭', 'Caisson'],
-  ['door', '🚪', 'Porte'], ['drawer', '🗄', 'Tiroirs'], ['leg', '🦵', 'Pieds'], ['cleat', '▪', 'Tasseaux'], ['back', '▦', 'Fond / dos'], ['joint', '🔩', 'Vis & équerres'], ['asm', '🧩', 'Assemblage'],
+  ['door', '🚪', 'Porte'], ['drawer', '🗄', 'Tiroirs'], ['leg', '🦵', 'Pieds'], ['cleat', '▪', 'Tasseaux'], ['back', '▦', 'Fond / dos'], ['wall', '📐', 'Équerres murales'], ['joint', '🔩', 'Vis & équerres d\'assemblage'], ['asm', '🧩', 'Assemblage'],
 ];
 // tailles courantes du commerce (hauteurs en cm) et largeur / diamètre typique (mm) ; en pin : planches de 18 collées
 const LEG_STD = { droit: { h: [10, 12, 15, 20], w: 30 }, rond: { h: [10, 15, 20], w: 40 }, carre: { h: [15, 25, 30, 40], w: 25 }, compas: { h: [15, 20, 25, 30], w: 60 }, epingle: { h: [10, 15, 20, 25, 30, 40, 72], w: 100 }, pin: { h: [10, 15, 20], w: 36 } };
 const LEG_SHAPES = { droit: 'Droit', compas: 'Compas', rond: 'Rond', carre: 'Carré', epingle: 'Épingle' };
-const PART_N = { joint: 'Vis & équerres', porte: 'Porte', tiroir: 'Tiroirs', pied: 'Pied', tasseau: 'Tasseau', dos: 'Fond' };
-const PART_I = { joint: '🔩', porte: '🚪', tiroir: '🗄', pied: '🦵', tasseau: '▪', dos: '▦' };
+const PART_N = { murale: 'Équerre murale', joint: 'Vis & équerres', porte: 'Porte', tiroir: 'Tiroirs', pied: 'Pied', tasseau: 'Tasseau', dos: 'Fond' };
+const PART_I = { murale: '📐', joint: '🔩', porte: '🚪', tiroir: '🗄', pied: '🦵', tasseau: '▪', dos: '▦' };
 let selPart = null;
 const SLIDES = [600, 550, 500, 450, 400, 350, 300, 250];
 
@@ -723,6 +723,7 @@ function partsCut() {
     if (p.src === 'pin') pieces.push({ code: 'Pi', name: `Pied en pin ${fmt(p.w)} × ${fmt(p.w)}`, q, L: p.h, w: p.w, t: p.w, sec: 'tass' });
     else buy(`Pied ${LEG_SHAPES[p.shape] || 'droit'} · ${fmt(p.h)} cm`, q);
   }
+  { const m = {}; for (const p of parts('murale')) { const k = `Équerre murale ${p.wa} × ${p.wl} mm`; m[k] = (m[k] || 0) + 1; } for (const [k, q] of Object.entries(m)) { buy(k, q); buy('Vis + chevilles pour ton mur (2 par équerre)', q * 2); buy('Petites vis à bois pour fixer l\'étagère (2 par équerre)', q * 2); } }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); pieces.push({ code: 'Ta', name: `Tasseau ${fmt(p.s)} × ${fmt(p.s)}`, q: 1, L: g.L, w: p.s, t: p.s, sec: 'tass' }); }
   for (const p of parts('dos')) {
     const o = outerRect(p.a), W_ = o.x1 - o.x0, H_ = o.y1 - o.y0;
@@ -1173,6 +1174,105 @@ function asmTap(sx, sy, wx, wy) {
   const cz = caissonAt(wx, wy); if (cz) { const ins = insideOf(cz.bb), all = ins.every(b => sel.has(b.id)); for (const b of ins) all ? sel.delete(b.id) : sel.add(b.id); return changed(false); }
 }
 
+// ---------- Équerres murales : les étagères tiennent au mur ; plan de pose ultra simple ----------
+// pièce { k:'murale', b: étagère, off: mm du bout gauche de l'étagère à l'axe de l'équerre, a: aile au mur (mm), l: aile sous l'étagère (mm) }
+const WALL_SIZES = [[75, 100], [100, 125], [125, 150], [150, 200], [200, 250]];
+const WALL_W = 30; // largeur d'une équerre vue de face
+function wallGeom(p) { const r = rect(byId(p.b)); return { cx: r.x0 + p.off, top: r.y0, bot: r.y0 - p.wa, w: WALL_W, r }; }
+const wallNum = () => { const ls = parts('murale').map(p => ({ p, g: wallGeom(p) })).sort((a, b) => b.g.top - a.g.top || a.g.cx - b.g.cx); const m = {}; ls.forEach((o, i) => m[o.p.id] = i + 1); return m; };
+function drawWall() {
+  const num = wallNum();
+  for (const p of parts('murale')) {
+    const g = wallGeom(p), on = selPart === p, [ax, ay] = toS(g.cx - g.w / 2, g.top), [bx, by] = toS(g.cx + g.w / 2, g.bot), w = bx - ax, h = by - ay;
+    cx.fillStyle = on ? '#f08c00' : '#5c636a'; cx.fillRect(ax, ay, w, h);
+    cx.fillStyle = 'rgba(255,255,255,.55)'; const d = Math.max(1.2, 2.5 * Vw.s); [.3, .72].forEach(f => { cx.beginPath(); cx.arc(ax + w / 2, ay + h * f, d, 0, 7); cx.fill(); });
+    if (on) { cx.strokeStyle = '#d9480f'; cx.lineWidth = 2; cx.strokeRect(ax - 2, ay - 2, w + 4, h + 4); }
+    const n = num[p.id], [nx, ny] = [ax + w / 2, by + 11]; cx.fillStyle = '#c92a2a'; cx.beginPath(); cx.arc(nx, ny, 8, 0, 7); cx.fill(); cx.fillStyle = '#fff'; cx.font = '800 10px -apple-system,Segoe UI,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(n, nx, ny + .5);
+  }
+}
+function wallWarn(b) { // conseils de portée pour une étagère
+  const ls = parts('murale').filter(p => p.b === b.id).map(p => p.off).sort((x, y) => x - y), L = b.L, out = [];
+  if (!ls.length) return out;
+  if (ls.length === 1) out.push('Une seule équerre : l\'étagère va basculer, mets-en au moins 2.');
+  for (let i = 1; i < ls.length; i++) if (ls[i] - ls[i - 1] > 800) out.push(`${fmt(ls[i] - ls[i - 1])} cm entre deux équerres : avec des livres, une planche de ${fmt(b.t)} mm risque de fléchir. Ajoute une équerre au milieu.`);
+  if (ls[0] > 300 || L - ls[ls.length - 1] > 300) out.push('Plus de 30 cm de porte-à-faux au bout : rapproche l\'équerre du bout.');
+  return out;
+}
+function wallTap(wx, wy) {
+  let best = null, bd = 1e9;
+  for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (wx < r.x0 - 2 || wx > r.x1 + 2) continue; const d = r.y0 - wy; if (d < -30 / Vw.s || d > 500) continue; if (d < bd) { bd = d; best = b; } }
+  if (!best) return toast('Touche juste sous l\'étagère, là où tu veux l\'équerre');
+  const r = rect(best), last = [...parts('murale')].pop(), dpt = depth(best);
+  const sz = last ? [last.wa, last.wl] : (WALL_SIZES.filter(([, l]) => l <= dpt * .85).pop() || WALL_SIZES[0]);
+  pushUndo(); const off = clamp(Math.round(wx - r.x0), WALL_W / 2, best.L - WALL_W / 2), p = { id: uid(), k: 'murale', b: best.id, off, wa: sz[0], wl: sz[1] };
+  D.parts = D.parts || []; D.parts.push(p); selPart = p; panelOn = true; changed(); toast(`Équerre à ${fmt(off)} cm du bout gauche`);
+}
+function wallPanelHtml(p) {
+  const b = byId(p.b), g = wallGeom(p), num = wallNum()[p.id], warn = wallWarn(b), dpt = depth(b);
+  return `<div style="font-size:12px;color:var(--mute);line-height:1.45">Équerre n° <b style="color:#c92a2a">${num}</b> sous <span class="tag">${boardInfo()[b.id].code}</span> · aile au mur ${fmt(p.wa)} cm, sous l'étagère ${fmt(p.wl)} cm${p.wl > dpt ? ' <b style="color:#b42318">(dépasse de l\'étagère)</b>' : ''}. Glisse-la pour la déplacer.</div>
+    <div class="grid2" style="margin-top:8px">${field('Depuis le bout gauche (cm)', 'woff', p.off)}${field('Depuis le bout droit (cm)', 'woffR', b.L - p.off)}</div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Taille (mur × étagère, en mm)</div>
+    <div class="seg" style="flex-wrap:wrap">${WALL_SIZES.map(([a, l]) => `<button data-wsz="${a}x${l}" class="${p.wa === a && p.wl === l ? 'on' : ''}">${a} × ${l}</button>`).join('')}</div>
+    ${warn.length ? `<div style="font-size:12px;color:#b42318;margin-top:6px;line-height:1.4">⚠ ${warn.join('<br>⚠ ')}</div>` : ''}
+    <div class="row"><button class="btn" id="wSym">⇔ Équerre symétrique</button><button class="btn" id="wAll">Cette taille partout</button><button class="btn" id="wPlan">📋 Plan de pose</button></div>`;
+}
+function wallPanelBind(P, p, set) {
+  const b = byId(p.b), inp = (k, f) => { const i = P.querySelector(`[data-k="${k}"]`); if (i) i.onchange = () => { const v = parseCm(i.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); set(() => f(v)); }; };
+  inp('woff', v => p.off = clamp(v, WALL_W / 2, b.L - WALL_W / 2)); inp('woffR', v => p.off = clamp(b.L - v, WALL_W / 2, b.L - WALL_W / 2));
+  P.querySelectorAll('[data-wsz]').forEach(x => x.onclick = () => set(() => { const [a, l] = x.dataset.wsz.split('x').map(Number); p.wa = a; p.wl = l; }));
+  $('#wSym').onclick = () => set(() => { const q = { ...p, id: uid(), off: b.L - p.off }; if (Math.abs(q.off - p.off) < 5) return toast('Elle est déjà au milieu'); D.parts.push(q); selPart = q; });
+  $('#wAll').onclick = () => set(() => { for (const q of parts('murale')) { q.wa = p.wa; q.wl = p.wl; } });
+  $('#wPlan').onclick = () => { debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 50); };
+}
+// ---- plan de pose ----
+function wallPlan() {
+  const ws = parts('murale'); if (!ws.length) return null;
+  const s = S(), floor = s.wallFloor || 0, bb = bbox(), x0 = bb.x0, num = wallNum(), I = boardInfo();
+  const br = ws.map(p => { const g = wallGeom(p); return { n: num[p.id], p, hTop: g.top + floor - bb.y0, x: g.cx - x0, size: `${p.wa} × ${p.wl}` }; }).sort((a, b) => a.n - b.n);
+  const shelves = [...new Set(ws.map(p => p.b))].map(byId).map(b => { const r = rect(b); return { b, code: I[b.id].code, name: I[b.id].name, left: r.x0 - x0, top: r.y1 + floor - bb.y0, bottom: r.y0 + floor - bb.y0, L: b.L, ns: br.filter(o => o.p.b === b.id).map(o => o.n) }; }).sort((a, b) => b.top - a.top);
+  return { br, shelves, floor, bb };
+}
+function wallLow(P) { let lo = 0; for (const o of P.br) { const g = wallGeom(o.p); lo = Math.min(lo, g.bot - P.bb.y0 + P.floor); } return -lo; }
+function wallSvg(P) {
+  const bb = P.bb, W = 330, low = wallLow(P), H0 = (bb.y1 - bb.y0) + Math.max(0, (P.floor || 0)), sc = Math.min(W / (bb.x1 - bb.x0 + 120), 260 / Math.max(H0 + low, 300)), Hs = (H0 + 60) * sc + 30 + low * sc;
+  const X = x => 30 + (x) * sc, Y = h => Hs - 20 - low * sc - h * sc;
+  let s = `<svg viewBox="0 0 ${W + 40} ${Hs}" style="width:100%;max-width:460px;display:block;margin:6px 0;background:#fbf8f2;border-radius:10px">`;
+  s += `<line x1="0" y1="${Y(0)}" x2="${W + 40}" y2="${Y(0)}" stroke="#7a6e60" stroke-width="2"/><text x="4" y="${Y(0) + 13}" font-size="9" fill="#7a6e60">sol</text>`;
+  s += `<line x1="${X(0)}" y1="6" x2="${X(0)}" y2="${Y(0)}" stroke="#c2255c" stroke-dasharray="4 3"/><text x="${X(0) + 3}" y="12" font-size="9" fill="#c2255c">repère</text>`;
+  for (const b of D.boards) { const r = rect(b); s += `<rect x="${X(r.x0 - bb.x0)}" y="${Y(r.y1 - bb.y0 + P.floor)}" width="${Math.max(1, (r.x1 - r.x0) * sc)}" height="${Math.max(1, (r.y1 - r.y0) * sc)}" fill="#e6cfa8" stroke="#b08850" stroke-width=".5"/>`; }
+  for (const o of P.br) { const g = wallGeom(o.p); s += `<rect x="${X(g.cx - bb.x0) - 2.5}" y="${Y(g.top - bb.y0 + P.floor)}" width="5" height="${Math.max(4, g.top - g.bot) * sc}" fill="#c92a2a"/><circle cx="${X(g.cx - bb.x0)}" cy="${Y(g.bot - bb.y0 + P.floor) + 8}" r="6.5" fill="#c92a2a"/><text x="${X(g.cx - bb.x0)}" y="${Y(g.bot - bb.y0 + P.floor) + 11}" font-size="8.5" font-weight="800" fill="#fff" text-anchor="middle">${o.n}</text>`; }
+  return s + '</svg>';
+}
+function wallPlanHtml() {
+  const P = wallPlan(); if (!P) return '';
+  let h = `<div class="sec" id="wallPlan">🧱 Plan de pose au mur</div>
+    <div class="grid2" style="margin-bottom:4px">${field('Le bas du meuble est à … du sol (cm)', 'wFloor', P.floor)}</div>
+    <div style="font-size:12px;color:var(--mute);line-height:1.45">Repère : trace au crayon un trait vertical sur le mur, là où ira le <b>bord gauche</b> du meuble. Toutes les distances partent de ce trait et du sol.</div>${wallLow(P) > 0 ? `<div style="color:#c92a2a;font-size:13px;margin-top:6px">⚠ Des équerres descendent sous le sol : indique à quelle hauteur est le bas du meuble (ou retire les équerres de l'étagère du bas).</div>` : ''}${wallSvg(P)}`;
+  h += `<div style="font-weight:700;margin-top:6px">1. Les équerres</div><table><tr><th>N°</th><th>Haut de l'équerre<br>(depuis le sol)</th><th>Axe<br>(depuis le repère)</th><th>Taille</th></tr>` + P.br.map(o => `<tr><td><b style="color:#c92a2a">${o.n}</b></td><td class="num"><b>${fmt(o.hTop)} cm</b></td><td class="num"><b>${fmt(o.x)} cm</b></td><td style="white-space:nowrap">${o.size}</td></tr>`).join('') + `</table>`;
+  h += `<div style="font-size:13px;line-height:1.5;margin-top:6px">Pour chaque équerre : trace un <b>trait de niveau</b> à la hauteur indiquée, marque l'<b>axe</b>, pose le <b>haut de l'équerre sur le trait</b>, centrée sur l'axe, marque les trous, perce, cheville, visse. Vérifie au niveau à bulle avant de serrer.</div>`;
+  h += `<div style="font-weight:700;margin-top:10px">2. Les étagères</div><table><tr><th>Étagère</th><th>Bout gauche<br>(depuis le repère)</th><th>Dessus<br>(depuis le sol)</th><th>Sur les équerres</th></tr>` + P.shelves.map(o => `<tr><td><span class="tag">${o.code}</span> ${esc(o.name)}</td><td class="num">${fmt(o.left)} cm</td><td class="num">${fmt(o.top)} cm</td><td>${o.ns.join(', ')}</td></tr>`).join('') + `</table>`;
+  h += `<div style="font-size:13px;line-height:1.5;margin-top:6px">Pose l'étagère sur ses équerres, aligne son bout gauche sur la distance indiquée, et visse-la par-dessous dans les équerres.</div>`;
+  return h;
+}
+function wallPlanPdf(doc, M, PW, PH) {
+  const P = wallPlan(); if (!P) return;
+  doc.addPage(); let y = M + 4;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(0); doc.text('Plan de pose au mur', M, y); y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.text(doc.splitTextToSize(`Repère : un trait vertical au crayon à l'emplacement du bord gauche du meuble. Hauteurs mesurées depuis le sol (bas du meuble à ${fmt(P.floor)} cm du sol).`, PW - 2 * M), M, y); y += 9;
+  const bb = P.bb, Wd = PW - 2 * M - 10, H0 = bb.y1 - bb.y0 + P.floor, low = wallLow(P), sc = Math.min(Wd / (bb.x1 - bb.x0), 80 / (H0 + low)), X = x => M + 6 + x * sc, Yf = y + 6 + H0 * sc, Y = h => Yf - h * sc;
+  doc.setDrawColor(120); doc.line(M, Yf, PW - M, Yf); doc.setFontSize(7); doc.text('sol', M, Yf + 3);
+  doc.setDrawColor(194, 37, 92); doc.line(X(0), y, X(0), Yf); doc.setTextColor(194, 37, 92); doc.text('repère', X(0) + 1, y + 2); doc.setTextColor(0);
+  for (const b of D.boards) { const r = rect(b); doc.setFillColor(230, 207, 168); doc.setDrawColor(176, 136, 80); doc.rect(X(r.x0 - bb.x0), Y(r.y1 - bb.y0 + P.floor), Math.max(.3, (r.x1 - r.x0) * sc), Math.max(.3, (r.y1 - r.y0) * sc), 'FD'); }
+  for (const o of P.br) { const g = wallGeom(o.p); doc.setFillColor(201, 42, 42); doc.rect(X(g.cx - bb.x0) - .8, Y(g.top - bb.y0 + P.floor), 1.6, Math.max(1.5, (g.top - g.bot) * sc), 'F'); doc.circle(X(g.cx - bb.x0), Y(g.bot - bb.y0 + P.floor) + 2.6, 2.1, 'F'); doc.setTextColor(255); doc.setFontSize(6.5); doc.text(String(o.n), X(g.cx - bb.x0), Y(g.bot - bb.y0 + P.floor) + 3.3, { align: 'center' }); doc.setTextColor(0); }
+  y = Yf + 9 + low * sc;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text('1. Les équerres', M, y); y += 5; doc.setFontSize(8); doc.setTextColor(120); doc.text('N°', M, y); doc.text('HAUT DE L\'ÉQUERRE (SOL)', M + 10, y); doc.text('AXE (REPÈRE)', M + 60, y); doc.text('TAILLE', M + 100, y); doc.setTextColor(0); y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  for (const o of P.br) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.setFont('helvetica', 'bold'); doc.text(String(o.n), M, y); doc.text(`${fmt(o.hTop)} cm`, M + 10, y); doc.text(`${fmt(o.x)} cm`, M + 60, y); doc.setFont('helvetica', 'normal'); doc.text(`${o.size} mm`, M + 100, y); y += 5.5; }
+  y += 2; doc.setFontSize(9); for (const ln of doc.splitTextToSize('Trait de niveau à la hauteur indiquée, axe marqué depuis le repère, haut de l\'équerre sur le trait, centrée sur l\'axe. Marquer, percer, cheviller, visser ; vérifier au niveau à bulle.', PW - 2 * M)) { doc.text(ln, M, y); y += 4.5; }
+  y += 4; doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.text('2. Les étagères', M, y); y += 5.5; doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5);
+  for (const o of P.shelves) { if (y > PH - M) { doc.addPage(); y = M + 4; } doc.text(`${o.code}  ${o.name} : bout gauche à ${fmt(o.left)} cm du repère, dessus à ${fmt(o.top)} cm du sol, sur les équerres ${o.ns.join(', ')}`, M, y); y += 5.2; }
+}
+
 // ---------- Dessin ----------
 function drawBacks() {
   for (const p of parts('dos')) {
@@ -1242,12 +1342,14 @@ function hitPart(sx, sy) {
   const [wx, wy] = toW(sx, sy), tol = 4 / Vw.s, inR = (x0, x1, y0, y1) => wx >= x0 - tol && wx <= x1 + tol && wy >= y0 - tol && wy <= y1 + tol;
   for (const p of parts('pied')) { const g = legGeom(p); if (inR(g.cx - g.w / 2 - 6 / Vw.s, g.cx + g.w / 2 + 6 / Vw.s, g.bot, g.top)) return p; }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); if (inR(g.x0, g.x1, g.y0, g.y1)) return p; }
+  for (const p of parts('murale')) { const g = wallGeom(p); if (inR(g.cx - g.w / 2 - 6 / Vw.s, g.cx + g.w / 2 + 6 / Vw.s, g.bot - 14 / Vw.s, g.top)) return p; }
   if (vis('showFronts')) for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) for (const f of fronts(p)) if (inR(f.x0, f.x1, f.y0, f.y1)) return p;
   return null;
 }
 function partsExtent(bb) { // encombrement avec pieds et façades en applique
   if (!bb) return bb; const e = { ...bb };
   for (const p of parts('pied')) { const g = legGeom(p); e.y0 = Math.min(e.y0, g.bot); }
+  for (const p of parts('murale')) { const g = wallGeom(p); e.y0 = Math.min(e.y0, g.bot - 25); }
   for (const p of parts().filter(p => p.k === 'porte' || p.k === 'tiroir')) for (const f of fronts(p)) { e.x0 = Math.min(e.x0, f.x0); e.x1 = Math.max(e.x1, f.x1); e.y0 = Math.min(e.y0, f.y0); e.y1 = Math.max(e.y1, f.y1); }
   return e;
 }
@@ -1284,6 +1386,7 @@ function partTap(t, wx, wy) {
     const np = ps.map(o => ({ id: uid(), k, b: hb.id, ...o })); D.parts.push(...np);
     return done(np[0], `${np.length * (base.pair === false ? 1 : 2)} pieds de ${fmt(base.h)} cm (avant + arrière)`);
   }
+  if (k === 'murale') return wallTap(wx, wy);
   if (k === 'tasseau') {
     if (parts('tasseau').some(p => p.b === hb.id)) { selPart = parts('tasseau').find(p => p.b === hb.id); panelOn = true; return changed(false); }
     pushUndo(); const s = ([...parts('tasseau')].pop() || { s: 20 }).s, np = ['l', 'r'].map(side => ({ id: uid(), k, b: hb.id, side, s })); D.parts.push(...np);
@@ -1322,6 +1425,8 @@ function partPanel(p) {
     h += lab('En profondeur') + segH('pair', p.pair === false ? 0 : 1, [[1, 'Avant + arrière (×2)'], [0, 'Un seul']]);
     const bb = bbox(); h += info(`Hauteur totale avec pieds : <b style="color:var(--ink)">${fmt(bb.y1 - Math.min(bb.y0, legGeom(p).bot))} cm</b>. Glisse le pied pour le décaler.`);
     h += `<div class="row"><button class="btn" id="pAll">Appliquer à tous les pieds</button><button class="btn" id="pAdd">+ Un pied ici</button></div>`;
+  } else if (p.k === 'murale') {
+    h += wallPanelHtml(p);
   } else if (p.k === 'tasseau') {
     const g = cleatGeom(p);
     h += info(`Sous l'étagère, vissé dans le montant. Longueur ${fmt(g.L)} cm (profondeur − 2 cm).`);
@@ -1345,6 +1450,7 @@ function partPanel(p) {
   P.querySelectorAll('[data-lh]').forEach(bt => bt.onclick = () => set(() => p.h = +bt.dataset.lh));
   P.querySelectorAll('[data-lw]').forEach(bt => bt.onclick = () => set(() => p.w = +bt.dataset.lw));
   const inp = (k_, prop, min) => { const i = P.querySelector(`[data-k="${k_}"]`); if (i) i.onchange = () => { const v = parseCm(i.value); if (!(v >= min)) { i.value = fmt(p[prop]); return toast('Valeur non comprise'); } set(() => p[prop] = v); }; };
+  if (p.k === 'murale') wallPanelBind(P, p, set);
   inp('pj', 'j', 0); inp('ph', 'h', 10); inp('pw', 'w', 5); inp('pins', 'ins', 0); inp('ps', 's', 10);
   if ($('#pAll')) $('#pAll').onclick = () => set(() => { for (const q of parts('pied')) Object.assign(q, { h: p.h, w: p.w, shape: p.shape, src: p.src, pair: p.pair, ins: q.side === 'c' ? q.ins : p.ins }); });
   if ($('#pAdd')) $('#pAdd').onclick = () => set(() => { const q = { ...p, id: uid(), side: 'c' }; D.parts.push(q); selPart = q; });
@@ -1358,11 +1464,12 @@ function buildHelp() {
     porte: 'Touche une case : une porte la ferme. Ensuite tu choisis en applique ou encastrée, 1 ou 2 vantaux, le côté des charnières.',
     tiroir: 'Touche une case : elle devient un tiroir. Tu peux en mettre plusieurs l\'un au-dessus de l\'autre. Le caisson du tiroir est calculé et ajouté au débit.',
     pied: 'Touche sous la planche du bas : 2 pieds se posent aux extrémités (×2 avec ceux de derrière). Achetés ou en pin, à la hauteur que tu veux.',
+    murale: 'Touche juste sous une étagère, à l\'endroit exact où tu veux une équerre : elle s\'y pose. Glisse-la pour l\'ajuster, ou tape sa distance au bout. L\'app te sort ensuite un plan de pose (Débit) : où percer le mur pour que les étagères tombent pile.',
     tasseau: 'Touche une étagère : 2 tasseaux se posent dessous, contre les montants, pour la porter.',
     dos: 'Touche un caisson : un fond se pose derrière, à ses dimensions extérieures (contreplaqué ou pin).',
   }[k];
   P.style.display = 'block';
-  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' ? 's' : k === 'porte' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>`;
+  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' || k === 'porte' || k === 'murale' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>`;
   $('#pClose').onclick = () => setTool('sel'); if ($('#tTools')) $('#tTools').onclick = e => { e.preventDefault(); toolsDialog(); };
 }
 
@@ -1371,7 +1478,7 @@ function updateBuildBtn() {
   const b = $('#bBuild'), it = BUILD.find(x => x[0] === tool);
   b.classList.toggle('on', !!it);
   b.querySelector('.ico').textContent = it ? it[1] : '🔨';
-  b.querySelector('.bl').textContent = it ? ({ h: 'Planche', v: 'Planche', back: 'Fond', joint: 'Vis', asm: 'Assembler' }[it[0]] || it[2]) : 'Construire';
+  b.querySelector('.bl').textContent = it ? ({ h: 'Planche', v: 'Planche', back: 'Fond', joint: 'Vis', asm: 'Assembler', wall: 'Murales' }[it[0]] || it[2]) : 'Construire';
 }
 function openBuild() {
   const m = $('#buildMenu');
@@ -1422,7 +1529,7 @@ function draw() {
   cx.globalAlpha = 1;
   if (S().showBooks !== false) for (const k of D.books) drawBookRow(k, selBook === k);
   drawObjs();
-  drawCleats(); drawLegs();
+  drawCleats(); drawLegs(); drawWall();
   if (tool === 'book' || tool === 'joint') cx.globalAlpha = tool === 'joint' ? .18 : .3; drawFronts(); cx.globalAlpha = 1;
   drawJoints();
 
@@ -1841,6 +1948,7 @@ cv.addEventListener('pointerdown', e => {
   if (PT[tool]) {
     base.pw = panelOn; panelOn = false;
     const hp = hitPart(sx, sy);
+    if (hp && hp.k === 'murale') { selPart = hp; const g = wallGeom(hp); drag = { ...base, type: 'pmove', p: hp, dx: wx - g.cx, ox: Vw.ox, oy: Vw.oy }; changed(false); return; }
     if (hp && hp.k === 'pied') { selPart = hp; const g = legGeom(hp); drag = { ...base, type: 'pmove', p: hp, dx: wx - g.cx, ox: Vw.ox, oy: Vw.oy }; changed(false); return; }
     drag = { ...base, type: 'pan', ox: Vw.ox, oy: Vw.oy, partTap: [wx, wy] }; return;
   }
@@ -1867,7 +1975,7 @@ cv.addEventListener('pointerdown', e => {
   { const hd = (sel.size === 1 || selBook) ? hitDim(sx, sy, touch ? 8 : 5) : null; if (hd) { selDim = hd.key; sel.clear(); selBook = null; const st = D.dims[hd.key]; drag = { ...base, type: 'dim', hd, locked: !!(st && st.lk), ox: Vw.ox, oy: Vw.oy }; changed(false); return; } }
   if (objPointerDown(base, sx, sy, wx, wy, touch)) return;
   selObj = null;
-  { const hp = hitPart(sx, sy); if (hp) { selPart = hp; sel.clear(); selBook = null; selDim = null; const g = hp.k === 'pied' ? legGeom(hp) : null; drag = { ...base, type: hp.k === 'pied' ? 'pmove' : 'ptap', p: hp, dx: g ? wx - g.cx : 0, ox: Vw.ox, oy: Vw.oy }; changed(false); return; } }
+  { const hp = hitPart(sx, sy); if (hp) { selPart = hp; sel.clear(); selBook = null; selDim = null; const g = hp.k === 'pied' ? legGeom(hp) : hp.k === 'murale' ? wallGeom(hp) : null; drag = { ...base, type: g ? 'pmove' : 'ptap', p: hp, dx: g ? wx - g.cx : 0, ox: Vw.ox, oy: Vw.oy }; changed(false); return; } }
   selPart = null;
   // 1re touche sur un caisson -> tout le caisson ; touche suivante -> la pièce touchée
   const hb = hitBoard(sx, sy), hk = hb ? null : hitBook(sx, sy), cz = caissonAt(wx, wy);
@@ -1905,6 +2013,11 @@ cv.addEventListener('pointermove', e => {
   drag.moved = true;
   const [sx, sy] = p, [wx, wy] = toW(sx, sy);
   if (drag.type === 'pan' || drag.type === 'ptap') { Vw.ox = drag.ox + sx - drag.start[0]; Vw.oy = drag.oy + sy - drag.start[1]; }
+  else if (drag.type === 'pmove' && drag.p.k === 'murale') {
+    const p = drag.p, r = rect(byId(p.b)); let c = wx - drag.dx; const step = 10; c = r.x0 + Math.round((c - r.x0) / step) * step;
+    const mid = (r.x0 + r.x1) / 2; if (Math.abs(c - mid) < 8 / Vw.s) c = mid;
+    p.off = clamp(c - r.x0, WALL_W / 2, p.b && byId(p.b).L - WALL_W / 2); liveLabel = [sx, sy, `${fmt(p.off)} cm du bout gauche · ${fmt(byId(p.b).L - p.off)} du droit`];
+  }
   else if (drag.type === 'pmove') {
     const p = drag.p, r = rect(byId(p.b)), w = p.w; let c = clamp(wx - drag.dx, r.x0 + w / 2, r.x1 - w / 2);
     const mid = (r.x0 + r.x1) / 2; if (Math.abs(c - mid) < 8 / Vw.s) { p.side = 'c'; c = mid; } else if (c < mid) { p.side = 'l'; p.ins = Math.round(c - w / 2 - r.x0); } else { p.side = 'r'; p.ins = Math.round(r.x1 - c - w / 2); }
@@ -2368,7 +2481,7 @@ function debitDialog() {
   { const bi = boardInfo(), pl = D.boards.map(b => ({ b, ...bi[b.id] })).sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
     h += `</table><div class="sec">Pièces</div><table><tr><th>Repère</th><th>Nom</th><th>Longueur</th><th>Où</th></tr>` + pl.map(it => `<tr><td><span class="tag">${it.code}</span></td><td>${esc(it.name)}</td><td class="num">${fmt(it.b.L)} cm</td><td style="padding:3px 4px">${miniSvg([it.b.id], 38, 38)}</td></tr>`).join(''); }
   if (cd.parts.pieces.length) h += `</table><div class="sec">Portes, tiroirs, pieds, tasseaux, fonds</div><table><tr><th>Repère</th><th>Nom</th><th>Qté</th><th>Longueur</th><th>Largeur × ép.</th></tr>` + cd.parts.pieces.map(x => `<tr><td><span class="tag">${x.code}</span></td><td>${esc(x.name)}</td><td class="num">${x.q}</td><td class="num">${fmt(x.L)} cm</td><td>${fmt(x.w)} × ${fmt(x.t)}</td></tr>`).join('');
-  h += `</table>` + drillSectionHtml() + `<div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
+  h += `</table>` + wallPlanHtml() + drillSectionHtml() + `<div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
     h += `<div style="font-size:12px;margin-top:8px"><b>${p.tass ? 'Tasseau' : 'Planche'} ${i + 1}</b> · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm</div><div class="bar">`;
     for (const pc of bn.pieces) h += `<div style="width:${pc.L / s.stock * 100}%" title="${pc.letter} ${fmt(pc.L)}">${pc.letter} ${fmt(pc.L)}</div>`;
@@ -2381,6 +2494,7 @@ function debitDialog() {
     <p style="color:var(--mute);font-size:12px">Une jonction = un bout de planche contre la face d'une autre. Prévois quelques vis de plus.</p>`;
   openModal(h);
   $('#dPdf').onclick = exportPdf;
+  { const wf = $('#mbox [data-k="wFloor"]'); if (wf) wf.onchange = () => { const v = parseCm(wf.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); D.settings.wallFloor = v; scheduleSave(); debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 30); }; }
   if ($('#dTools')) $('#dTools').onclick = e => { e.preventDefault(); closeModal(); toolsDialog(); };
   $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; for (const x of cd.parts.pieces) t += `${x.code}  ${x.q} × ${fmt(x.L)} cm  (${fmt(x.w)} × ${fmt(x.t)})  ${x.name}\n`; t += `Planches : ${nPlanks} × ${fmt(s.stock)} cm\nVis : ${cd.screws} × ${s.screwType}\n`; for (const b of cd.parts.buys) t += `${b.q} × ${b.txt}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
 }
@@ -2476,6 +2590,7 @@ async function exportPdf() {
     for (const pc of bn.pieces) { const w = pc.L / s.stock * barW; doc.setFillColor(224, 180, 124); doc.rect(x, y, w, 9, 'FD'); if (w > 12) doc.text(`${pc.letter} ${fmt(pc.L)}`, x + w / 2, y + 5.6, { align: 'center' }); else if (w > 3) doc.text(pc.letter, x + w / 2, y + 5.6, { align: 'center' }); x += w; }
     y += 15;
   });
+  wallPlanPdf(doc, M, PW, PH);
   drillSectionPdf(doc, y, M, PW, PH);
   await saveFile((D.name || 'meuble').replace(/[\\/:*?"<>|]/g, '-') + '.pdf', doc.output('blob'));
 }
@@ -3081,6 +3196,7 @@ function partBoxes() {
   const out = [], t = S().t;
   for (const p of parts('dos')) { const o = outerRect(p.a), e = p.mat === 'pin' ? t : (p.ep || 5); out.push([o.x0, o.y0, -e, o.x1, o.y1, 0, p.mat === 'pin' ? 'w' : '#cfb489']); }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); out.push([g.x0, g.y0, 0, g.x1, g.y1, g.L, '#c99a62']); }
+  for (const p of parts('murale')) { const g = wallGeom(p); out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 4, '#5c636a']); out.push([g.cx - g.w / 2, g.top - 4, 0, g.cx + g.w / 2, g.top, p.wl, '#5c636a']); }
   for (const p of parts('pied')) {
     const g = legGeom(p), d = depth(byId(p.b)), zs = p.pair === false ? [d / 2] : [d - p.ins - g.w / 2, p.ins + g.w / 2], col = p.src === 'pin' ? 'w' : p.shape === 'epingle' ? '#2a2a2a' : '#c8955a';
     const shape = p.src === 'pin' ? 'box' : p.shape === 'rond' ? 'cyl' : p.shape === 'compas' ? 'cone' : p.shape === 'epingle' ? 'pin' : 'box';
