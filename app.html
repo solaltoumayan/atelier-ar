@@ -723,7 +723,7 @@ function partsCut() {
     if (p.src === 'pin') pieces.push({ code: 'Pi', name: `Pied en pin ${fmt(p.w)} × ${fmt(p.w)}`, q, L: p.h, w: p.w, t: p.w, sec: 'tass' });
     else buy(`Pied ${LEG_SHAPES[p.shape] || 'droit'} · ${fmt(p.h)} cm`, q);
   }
-  { const m = {}; for (const p of parts('murale')) { const k = `Équerre murale ${p.wa} × ${p.wl} mm`; m[k] = (m[k] || 0) + 1; } for (const [k, q] of Object.entries(m)) { buy(k, q); buy('Vis + chevilles pour ton mur (2 par équerre)', q * 2); buy('Petites vis à bois pour fixer l\'étagère (2 par équerre)', q * 2); } }
+  { let wall = 0; const wood = {}; for (const p of parts('murale')) { buy(`Équerre murale ${p.mn ? `« ${p.mn} » ` : ''}${p.wa} × ${p.wl} mm`, 1); const h = p.mh || 2; wall += h; const k = `Vis à bois${p.msc ? ' ' + p.msc : ''} pour fixer l'étagère sur les équerres`; wood[k] = (wood[k] || 0) + h; } if (wall) { buy('Vis + chevilles adaptées à ton mur (côté mur des équerres)', wall); for (const [k, q] of Object.entries(wood)) buy(k, q); } }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); pieces.push({ code: 'Ta', name: `Tasseau ${fmt(p.s)} × ${fmt(p.s)}`, q: 1, L: g.L, w: p.s, t: p.s, sec: 'tass' }); }
   for (const p of parts('dos')) {
     const o = outerRect(p.a), W_ = o.x1 - o.x0, H_ = o.y1 - o.y0;
@@ -783,8 +783,9 @@ function screwCheck(j) {
 const ANGLE_HEAD = 75; // un renvoi d'angle compact demande environ 7,5 cm + l'embout + la vis
 function angleOk(r, sl) { if (!r.ok && tools().angle && r.free >= ANGLE_HEAD + tools().bit + sl) { r.ok = true; r.angle = true; } return r; }
 // côté « intérieur » d'une équerre par défaut : là où il y a une case fermée
+function brSides(j) { const b = brOf(j); return b && b.s === 'both' ? ['-', '+'] : [brSide(j)]; }
 function brSide(j) {
-  const b = brOf(j); if (b && b.s) return b.s;
+  const b = brOf(j); if (b && b.s && b.s !== 'both') return b.s;
   const g = jGeo(j), probe = s => { const [x, y] = g.corners[s], dir = g.axis === 'y' ? (s === '+' ? 'x+' : 'x-') : (s === '+' ? 'y+' : 'y-'); return freeRay(x, y, dir, 10, [j.A.id, j.B.id]).free; };
   const m = probe('-'), p = probe('+'); if (Number.isFinite(m) && !Number.isFinite(p)) return '-'; if (Number.isFinite(p) && !Number.isFinite(m)) return '+';
   return g.axis === 'x' ? '-' : (m <= p ? '-' : '+'); // étagère : dessous ; montant : côté le plus petit
@@ -792,17 +793,20 @@ function brSide(j) {
 // équerre : vis dans B (visseuse dans la case, face à B) et vis dans A (visseuse dans la case, face à A)
 function brCheck(j) {
   const b = brOf(j); if (!b) return null;
-  const T = tools(), need = T.L + T.bit + screwLen(BR_SCREW), g = jGeo(j), s = brSide(j), [x, y] = g.corners[s], a = b.a || 40, sg = s === '+' ? 1 : -1, skip = [j.A.id, j.B.id];
-  let r1, r2;
-  if (g.axis === 'y') { // aile sur B (horizontale) : visser vers B depuis la case ; aile sur A (verticale) : visser vers A
-    r1 = freeRay(x + sg * a / 2, y, g.inward < 0 ? 'y-' : 'y+', CHUCK_R, skip);
-    r2 = freeRay(x, y + g.inward * a / 2, sg > 0 ? 'x+' : 'x-', CHUCK_R, skip);
-  } else {
-    r1 = freeRay(x, y + sg * a / 2, g.inward < 0 ? 'x-' : 'x+', CHUCK_R, skip);
-    r2 = freeRay(x + g.inward * a / 2, y, sg > 0 ? 'y+' : 'y-', CHUCK_R, skip);
+  const T = tools(), sl = screwLen(b.sc || BR_SCREW), need = T.L + T.bit + sl, g = jGeo(j), a = b.a || 40, l = b.l || a, skip = [j.A.id, j.B.id];
+  let w = null;
+  for (const s of brSides(j)) {
+    const [x, y] = g.corners[s], sg = s === '+' ? 1 : -1; let r1, r2;
+    if (g.axis === 'y') { // aile 1 sur B (horizontale) : visser vers B depuis la case ; aile 2 sur A (verticale) : visser vers A
+      r1 = freeRay(x + sg * a / 2, y, g.inward < 0 ? 'y-' : 'y+', CHUCK_R, skip);
+      r2 = freeRay(x, y + g.inward * l / 2, sg > 0 ? 'x+' : 'x-', CHUCK_R, skip);
+    } else {
+      r1 = freeRay(x, y + sg * a / 2, g.inward < 0 ? 'x-' : 'x+', CHUCK_R, skip);
+      r2 = freeRay(x + g.inward * l / 2, y, sg > 0 ? 'y+' : 'y-', CHUCK_R, skip);
+    }
+    for (const r of [r1, r2]) if (!w || r.free < w.free) w = r;
   }
-  const w = r1.free < r2.free ? r1 : r2;
-  return angleOk({ ok: w.free >= need, free: w.free, need, by: w.by }, screwLen(BR_SCREW));
+  return angleOk({ ok: w.free >= need, free: w.free, need, by: w.by }, sl);
 }
 function drillIssues() {
   const out = [];
@@ -818,11 +822,10 @@ function issueTxt(x, I) {
   return `<b><span class="tag">${I[x.j.B.id].code}</span> → <span class="tag">${I[x.j.A.id].code}</span></b> ${x.kind === 'vis' ? `vis depuis ${fromTxt(x.j)}` : 'vis de l\'équerre'} : il faut <b>${fmt(x.need)} cm</b>, il n'y a que <b style="color:#b42318">${fmt(x.free)} cm</b>${by ? ` (bloqué par ${by})` : ''}.<br><span style="color:var(--mute)">→ Visse ${x.kind === 'vis' ? 'cette jonction' : 'cette équerre'} avant de poser ${by || 'la planche qui gêne'}${tools().angle ? '' : ', ou utilise un renvoi d\'angle'}${x.kind === 'vis' ? ', ou passe en équerre' : ''}.</span>`;
 }
 function bracketBuys() {
-  const m = new Map(); let screws = 0;
-  for (const j of jointList()) { const b = brOf(j); if (!b) continue; const a = b.a || 40; m.set(a, (m.get(a) || 0) + b.n); screws += b.n * brHoles(a); }
-  const out = [...m.entries()].sort((a, b) => a[0] - b[0]).map(([a, q]) => ({ txt: `Équerre ${a} × ${a} mm`, q }));
-  if (screws) out.push({ txt: `Vis ${BR_SCREW} (pour les équerres)`, q: screws });
-  return out;
+  const m = new Map(), sc = new Map();
+  for (const j of jointList()) { const b = brOf(j); if (!b) continue; const a = b.a || 40, l = b.l || a, q = b.n * brSidesN(b), k = `Équerre ${b.mn ? `« ${b.mn} » ` : ''}${a} × ${l} mm`, v = `Vis ${b.sc || BR_SCREW} (pour les équerres)`;
+    m.set(k, (m.get(k) || 0) + q); sc.set(v, (sc.get(v) || 0) + q * (b.h ? b.h * 2 : brHoles(a))); }
+  return [...[...m.entries()].map(([txt, q]) => ({ txt, q })), ...[...sc.entries()].map(([txt, q]) => ({ txt, q }))];
 }
 
 // ---------- Dessin : équerres, têtes de vis et alertes ----------
@@ -831,13 +834,13 @@ function drawJoints() {
   const jt = tool === 'joint', J = jointList();
   for (const j of J) {
     const b = brOf(j), on = selJoint === j.key;
-    if (b) { // petite équerre en L dans le coin
-      const g = jGeo(j), s = brSide(j), [x, y] = g.corners[s], a = b.a || 40, sg = s === '+' ? 1 : -1, bad = brCheck(j) && !brCheck(j).ok;
-      const [px, py] = toS(x, y), L = a * Vw.s, th = Math.max(2.5, 3 * Vw.s);
-      let ex, ey, fx, fy; // aile le long de B, aile le long de A
-      if (g.axis === 'y') { ex = px + sg * L; ey = py; fx = px; fy = py - g.inward * L; } else { ex = px; ey = py - sg * L; fx = px + g.inward * L; fy = py; }
-      cx.strokeStyle = bad ? '#d92d20' : on ? '#d9480f' : '#4a4a4a'; cx.lineWidth = th; cx.lineCap = 'square'; cx.beginPath(); cx.moveTo(ex, ey); cx.lineTo(px, py); cx.lineTo(fx, fy); cx.stroke(); cx.lineCap = 'butt';
-      if (b.n > 1 && L > 14) { cx.font = '800 10px -apple-system,Segoe UI,sans-serif'; cx.fillStyle = '#4a4a4a'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('×' + b.n, (ex + fx) / 2 + (ex - px) * .15 + (fx - px) * .15, (ey + fy) / 2 + (ey - py) * .15 + (fy - py) * .15); }
+    if (b) for (const s of brSides(j)) { // petite équerre en L dans le coin
+      const g = jGeo(j), [x, y] = g.corners[s], a = b.a || 40, l = b.l || a, sg = s === '+' ? 1 : -1, bad = brCheck(j) && !brCheck(j).ok;
+      const [px, py] = toS(x, y), L = a * Vw.s, L2 = l * Vw.s, th = Math.max(2.5, 3 * Vw.s);
+      let ex, ey, fx, fy; // aile 1 le long de B, aile 2 le long de A
+      if (g.axis === 'y') { ex = px + sg * L; ey = py; fx = px; fy = py - g.inward * L2; } else { ex = px; ey = py - sg * L; fx = px + g.inward * L2; fy = py; }
+      cx.strokeStyle = bad ? '#d92d20' : on ? '#d9480f' : b.col && b.col !== 'blanc' ? brCol(b.col) : '#4a4a4a'; cx.lineWidth = th; cx.lineCap = 'square'; cx.beginPath(); cx.moveTo(ex, ey); cx.lineTo(px, py); cx.lineTo(fx, fy); cx.stroke(); cx.lineCap = 'butt';
+      if (b.n > 1 && Math.min(L, L2) > 14) { cx.font = '800 10px -apple-system,Segoe UI,sans-serif'; cx.fillStyle = '#4a4a4a'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText('×' + b.n, (ex + fx) / 2 + (ex - px) * .15 + (fx - px) * .15, (ey + fy) / 2 + (ey - py) * .15 + (fy - py) * .15); }
     }
     const n = screwsOf(j); if (!n) continue;
     const c = screwCheck(j), g = jGeo(j), [sx, sy] = toS(g.ox, g.oy);
@@ -868,20 +871,22 @@ function jointEditor(box, j, after) {
     <div class="row" style="align-items:center;margin-top:2px"><button class="btn" id="jm" style="font-size:22px;width:48px;justify-content:center">−</button><span class="big" style="min-width:70px;text-align:center">${n} vis</span><button class="btn" id="jp" style="font-size:22px;width:48px;justify-content:center">+</button>${custom ? `<button class="btn" id="jr">↺ ${S().screwsPerJoint} par défaut</button>` : ''}</div>
     ${n ? `<div style="font-size:12px;margin-top:4px;line-height:1.45">${okTxt(c, `: il faut ${fmt(c.need)} cm (visseuse ${fmt(T.L)} + embout ${fmt(T.bit)} + vis ${fmt(screwLen(S().screwType))}), il n'y a que ${fmt(c.free)} cm${c.by ? ` à cause de <span class="tag">${I[c.by.id].code}</span>` : ''}. Visse avant de poser ${c.by ? I[c.by.id].code : 'cette planche'}.`)}</div>` : ''}
     <div style="font-size:12px;font-weight:700;margin:10px 0 2px">Équerres</div>
-    <div class="row" style="align-items:center;margin-top:2px"><button class="btn" id="bm" style="font-size:22px;width:48px;justify-content:center">−</button><span class="big" style="min-width:70px;text-align:center">${b ? b.n : 0}</span><button class="btn" id="bp" style="font-size:22px;width:48px;justify-content:center">+</button></div>
-    ${b ? `<div class="seg" style="flex-wrap:wrap;margin-top:6px">${BRACKETS.map(a => `<button data-ba="${a}" class="${(b.a || 40) === a ? 'on' : ''}">${a} mm</button>`).join('')}</div>
-      <div class="seg" style="margin-top:6px">${(jGeo(j).axis === 'y' ? [['-', '◧ À gauche'], ['+', 'À droite ◨']] : [['-', '▁ Dessous'], ['+', '▔ Dessus']]).map(([v, l]) => `<button data-bs="${v}" class="${brSide(j) === v ? 'on' : ''}">${l}</button>`).join('')}</div>
-      <div style="font-size:12px;margin-top:4px;line-height:1.45">${brHoles(b.a || 40)} vis ${BR_SCREW} par équerre · ${okTxt(bc, `: il faut ${fmt(bc.need)} cm, il n'y a que ${fmt(bc.free)} cm. Pose l'équerre avant de fermer la case, ou prends une équerre plus grande.`)}</div>` : ''}
-    <div class="row"><button class="btn" id="jAll">Ces réglages partout</button></div>`;
+    <div style="font-size:12px;color:var(--mute)">${b ? `${b.mn ? esc(b.mn) : 'Équerre'} · ${b.a || 40} × ${b.l || b.a || 40} mm` : 'Aucune équerre ici. Choisis un modèle puis appuie sur +.'}</div>
+    ${brPickHtml('asm', b ? b.m : BRCUR.asm)}
+    <div class="row" style="align-items:center;margin-top:6px"><button class="btn" id="bm" style="font-size:22px;width:48px;justify-content:center">−</button><span class="big" style="min-width:70px;text-align:center">${b ? b.n : 0}</span><button class="btn" id="bp" style="font-size:22px;width:48px;justify-content:center">+</button><span style="font-size:12px;color:var(--mute)">${b ? `réparties sur la profondeur${b.s === 'both' ? ', de chaque côté' : ''}` : ''}</span></div>
+    ${b ? `<div class="seg" style="margin-top:6px">${(jGeo(j).axis === 'y' ? [['-', '◧ À gauche'], ['both', 'Les deux'], ['+', 'À droite ◨']] : [['-', '▁ Dessous'], ['both', 'Les deux'], ['+', '▔ Dessus']]).map(([v, l]) => `<button data-bs="${v}" class="${(b.s === 'both' ? 'both' : brSide(j)) === v ? 'on' : ''}">${l}</button>`).join('')}</div>
+      <div style="font-size:12px;margin-top:4px;line-height:1.45">${b.h ? b.h * 2 : brHoles(b.a || 40)} vis ${esc(b.sc || BR_SCREW)} par équerre · ${okTxt(bc, `: il faut ${fmt(bc.need)} cm, il n'y a que ${fmt(bc.free)} cm. Pose l'équerre avant de fermer la case, ou prends une équerre plus grande.`)}</div>` : ''}
+    <div class="row"><button class="btn" id="jAll">Ces vis partout</button>${b ? '<button class="btn" id="bAll">Cette équerre partout</button>' : ''}</div>`;
   const save = () => { scheduleSave(); after(); };
   const setS = v => { pushUndo(); D.screws = D.screws || {}; if (v == null) delete D.screws[j.key]; else D.screws[j.key] = clamp(v, 0, 12); save(); };
-  const setB = fn => { pushUndo(); D.brackets = D.brackets || {}; const cur = D.brackets[j.key] || { n: 0, a: lastBr() }; fn(cur); if (cur.n > 0) D.brackets[j.key] = cur; else delete D.brackets[j.key]; save(); };
+  const setB = fn => { pushUndo(); D.brackets = D.brackets || {}; const cur = D.brackets[j.key] || { n: 0 }; fn(cur); if (cur.n > 0) D.brackets[j.key] = cur; else delete D.brackets[j.key]; save(); };
   box.querySelector('#jm').onclick = () => setS(n - 1); box.querySelector('#jp').onclick = () => setS(n + 1); if (box.querySelector('#jr')) box.querySelector('#jr').onclick = () => setS(null);
   box.querySelector('#bm').onclick = () => setB(o => o.n = Math.max(0, o.n - 1));
-  box.querySelector('#bp').onclick = () => setB(o => { o.n = Math.min(8, o.n + 1); if (!o.s && selJointSide && o.n === 1) o.s = selJointSide; });
-  box.querySelectorAll('[data-ba]').forEach(x => x.onclick = () => setB(o => o.a = +x.dataset.ba));
+  box.querySelector('#bp').onclick = () => { const m = b ? null : brModel(BRCUR.asm); if (!b && !m) { toast(brModels().some(x => x.type === 'asm') ? 'Choisis d\'abord ton modèle d\'équerre' : 'Crée d\'abord ton modèle d\'équerre (＋ Nouveau modèle)'); return; } setB(o => { if (m) asmApply(o, m); o.n = Math.min(8, o.n + 1); if (!o.s && selJointSide && o.n === 1) o.s = selJointSide; }); };
+  brPickBind(box, 'asm', m => { if (!m) return; BRCUR.asm = m.id; if (b) setB(o => asmApply(o, m)); else after(); }, () => after());
   box.querySelectorAll('[data-bs]').forEach(x => x.onclick = () => setB(o => o.s = x.dataset.bs));
-  box.querySelector('#jAll').onclick = () => { pushUndo(); D.screws = D.screws || {}; D.brackets = D.brackets || {}; for (const k of jointList()) { D.screws[k.key] = n; if (b) D.brackets[k.key] = { n: b.n, a: b.a || 40 }; else delete D.brackets[k.key]; } save(); toast(`${n} vis${b ? ` + ${b.n} équerre(s)` : ''} sur toutes les jonctions`); };
+  box.querySelector('#jAll').onclick = () => { pushUndo(); D.screws = D.screws || {}; for (const k of jointList()) D.screws[k.key] = n; save(); toast(`${n} vis sur toutes les jonctions (les équerres ne bougent pas)`); };
+  if (box.querySelector('#bAll')) box.querySelector('#bAll').onclick = () => { pushUndo(); D.brackets = D.brackets || {}; for (const k of jointList()) { const o = { ...b }; if (b.s !== 'both') delete o.s; D.brackets[k.key] = o; } save(); toast(`${b.n} équerre(s) sur toutes les jonctions`); };
   box.querySelector('#jx').onclick = () => { selJoint = null; if (V3.sel === j.key) V3.sel = null; after(true); };
 }
 const lastBr = () => { const v = Object.values(D.brackets || {}).pop(); return v && v.a || 40; };
@@ -1174,17 +1179,96 @@ function asmTap(sx, sy, wx, wy) {
   const cz = caissonAt(wx, wy); if (cz) { const ins = insideOf(cz.bb), all = ins.every(b => sel.has(b.id)); for (const b of ins) all ? sel.delete(b.id) : sel.add(b.id); return changed(false); }
 }
 
+// ---------- Mes modèles d'équerres : catalogue perso, rien n'est posé par défaut ----------
+// modèle { id, type:'mur'|'asm', name, a: aile 1 (mm) — au mur / sur la planche traversée, l: aile 2 (mm) — sous l'étagère / sur le chant, w: largeur (mm), h: trous par aile, sc: vis, col }
+const BR_COL = { acier: ['Acier', '#8a8f96', 0x8a8f96], noir: ['Noir', '#2b2b2b', 0x2b2b2b], blanc: ['Blanc', '#e4e4df', 0xe4e4df], laiton: ['Laiton', '#b08d3c', 0xb08d3c] };
+const brCol = c => (BR_COL[c] || BR_COL.acier)[1];
+const brModels = () => LS.get('atelier.brmodels') || [];
+const brSaveModels = a => LS.set('atelier.brmodels', a);
+const brModel = id => id ? brModels().find(m => m.id === id) || null : null;
+const BRCUR = { mur: null, asm: null }; // modèle choisi pour poser : aucun tant que tu n'as pas choisi
+const BR_TYPE = { mur: '📐 Équerres murales (contre le mur)', asm: '🔩 Équerres d\'assemblage (entre deux planches)' };
+function wallApply(p, m) { p.m = m.id; p.mn = m.name; p.wa = m.a; p.wl = m.l; p.ww = m.w; p.mh = m.h; p.msc = m.sc; p.col = m.col; }
+function asmApply(b, m) { b.m = m.id; b.mn = m.name; b.a = m.a; b.l = m.l; b.w = m.w; b.h = m.h; b.sc = m.sc; b.col = m.col; }
+// un meuble ouvert sur un autre appareil : on récupère ses modèles dans le catalogue
+function brAdopt() {
+  const ms = brModels(), have = new Set(ms.map(m => m.id)); let add = false;
+  for (const p of parts('murale')) if (p.m && !have.has(p.m)) { ms.push({ id: p.m, type: 'mur', name: p.mn || 'Équerre', a: p.wa, l: p.wl, w: p.ww || WALL_W, h: p.mh || 2, sc: p.msc || '', col: p.col || 'acier' }); have.add(p.m); add = true; }
+  for (const b of Object.values(D.brackets || {})) if (b.m && !have.has(b.m)) { ms.push({ id: b.m, type: 'asm', name: b.mn || 'Équerre', a: b.a, l: b.l || b.a, w: b.w || 16, h: b.h || 2, sc: b.sc || '', col: b.col || 'acier' }); have.add(b.m); add = true; }
+  if (add) brSaveModels(ms);
+}
+// petit dessin d'un modèle : un L avec ses cotes
+function brSvg(m, big) {
+  const a = +m.a || 0, l = +m.l || 0, W = big ? 150 : 34, H = big ? 120 : 28, k = Math.min((W - (big ? 40 : 6)) / Math.max(l, 1), (H - (big ? 30 : 6)) / Math.max(a, 1)), x0 = big ? 22 : 3, y0 = big ? 10 : 3, th = big ? 5 : 3, c = brCol(m.col);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="vertical-align:middle;flex:none"><path d="M${x0} ${y0}V${y0 + a * k}H${x0 + l * k}" fill="none" stroke="${c}" stroke-width="${th}" stroke-linejoin="miter"/>`;
+  if (big && a && l) s += `<text x="${x0 - 5}" y="${y0 + a * k / 2}" font-size="10" text-anchor="end" dominant-baseline="middle" fill="#7a6e60">${a}</text><text x="${x0 + l * k / 2}" y="${y0 + a * k + 14}" font-size="10" text-anchor="middle" fill="#7a6e60">${l}</text>`;
+  return s + '</svg>';
+}
+const brDesc = m => `${m.type === 'mur' ? `mur ${m.a} × étagère ${m.l}` : `${m.a} × ${m.l}`} mm · larg. ${m.w} · ${m.h} trou${m.h > 1 ? 's' : ''}/aile${m.sc ? ` · vis ${esc(m.sc)}` : ''}`;
+// rangée de choix de modèle (panneaux)
+function brPickHtml(type, curId) {
+  const L = brModels().filter(m => m.type === type);
+  return `<div class="seg" style="flex-wrap:wrap;margin-top:6px">${L.map(m => `<button data-brm="${m.id}" class="${curId === m.id ? 'on' : ''}" style="display:flex;align-items:center;gap:5px"><span style="background:#fffdf8;border-radius:5px;display:inline-flex">${brSvg(m)}</span>${esc(m.name)}</button>`).join('')}<button data-brnew="${type}">＋ Nouveau modèle</button><button data-brlib="${type}">⚙</button></div>`;
+}
+function brPickBind(P, type, pick, back) {
+  P.querySelectorAll('[data-brm]').forEach(x => x.onclick = () => pick(brModel(x.dataset.brm)));
+  P.querySelectorAll('[data-brnew]').forEach(x => x.onclick = () => brModelForm(type, null, m => { closeModal(); pick(m); }));
+  P.querySelectorAll('[data-brlib]').forEach(x => x.onclick = () => brModelsDialog(back));
+}
+// catalogue
+function brModelsDialog(after) {
+  brAdopt(); const ms = brModels(), used = brUsage();
+  const sec = t => `<div class="sec">${BR_TYPE[t]}</div>` + (ms.filter(m => m.type === t).map(m => `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)">${brSvg(m)}<div style="flex:1;min-width:0"><b>${esc(m.name)}</b>${used[m.id] ? ` <span style="font-size:11px;color:var(--mute)">· ${used[m.id]} dans ce meuble</span>` : ''}<div style="font-size:12px;color:var(--mute)">${brDesc(m)}</div></div><button class="btn" data-bre="${m.id}">✎</button></div>`).join('') || `<div style="color:var(--mute);font-size:13px;margin:4px 0">Aucun modèle pour l'instant.</div>`) + `<div class="row"><button class="btn" data-brn="${t}">＋ Nouveau modèle</button></div>`;
+  openModal(`<h2>Mes modèles d'équerres<button class="btn" data-close>✕</button></h2><div style="font-size:13px;color:var(--mute);line-height:1.45">Tes modèles servent dans tous tes meubles. Aucune équerre n'est posée tant que tu ne l'as pas choisie et placée toi-même.</div>${sec('mur')}${sec('asm')}`);
+  const back = () => { brModelsDialog(after); if (after) after(); };
+  $('#mbox').querySelectorAll('[data-brn]').forEach(x => x.onclick = () => brModelForm(x.dataset.brn, null, back));
+  $('#mbox').querySelectorAll('[data-bre]').forEach(x => x.onclick = () => brModelForm(null, brModel(x.dataset.bre), back));
+}
+function brUsage() { const u = {}; for (const p of parts('murale')) if (p.m) u[p.m] = (u[p.m] || 0) + 1; for (const b of Object.values(D.brackets || {})) if (b.m) u[b.m] = (u[b.m] || 0) + b.n * brSidesN(b); return u; }
+const brSidesN = b => b.s === 'both' ? 2 : 1;
+function brModelForm(type, m, done) {
+  const isNew = !m; m = m ? { ...m } : { id: uid(), type, name: '', a: '', l: '', w: '', h: 2, sc: '', col: 'acier' };
+  const n = (k, lab, ph) => `<label class="f">${lab}<input data-bf="${k}" inputmode="numeric" value="${m[k] === '' ? '' : m[k]}" placeholder="${ph}"></label>`;
+  const draw = () => {
+    const mur = m.type === 'mur';
+    openModal(`<h2>${isNew ? 'Nouveau modèle' : 'Modifier le modèle'}<button class="btn" data-close>✕</button></h2>
+      ${isNew ? `<div class="seg" style="margin-bottom:8px"><button data-bt="mur" class="${mur ? 'on' : ''}">📐 Murale</button><button data-bt="asm" class="${!mur ? 'on' : ''}">🔩 Assemblage</button></div>` : ''}
+      <div style="display:flex;gap:10px;align-items:center"><div id="brPrev">${brSvg(m, true)}</div><div style="font-size:12px;color:var(--mute);line-height:1.45">Mesure ton équerre (en mm), ou recopie les cotes de l'étiquette. ${mur ? 'Aile 1 = contre le mur (verticale), aile 2 = sous l\'étagère.' : 'Aile 1 = sur la planche qu\'on traverse, aile 2 = sur l\'autre planche.'}</div></div>
+      <label class="f">Nom (comme tu l'appelles)<input data-bf="name" value="${esc(m.name)}" placeholder="${mur ? 'ex : Équerre noire Leroy Merlin' : 'ex : Petite équerre 40'}"></label>
+      <div class="grid2">${n('a', mur ? 'Aile 1 · contre le mur (mm)' : 'Aile 1 (mm)', 'ex : 125')}${n('l', mur ? 'Aile 2 · sous l\'étagère (mm)' : 'Aile 2 (mm)', 'ex : 150')}${n('w', 'Largeur (mm)', 'ex : 30')}${n('h', 'Trous par aile', 'ex : 2')}</div>
+      <label class="f">Vis à utiliser (facultatif)<input data-bf="sc" value="${esc(m.sc || '')}" placeholder="ex : 4 × 30"></label>
+      <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Couleur</div>
+      <div class="seg">${Object.entries(BR_COL).map(([k, [lab, c]]) => `<button data-bc="${k}" class="${m.col === k ? 'on' : ''}"><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${c};border:1px solid #0002;margin-right:4px"></i>${lab}</button>`).join('')}</div>
+      <div class="row"><button class="btn pri" id="bfOk">Enregistrer</button>${!isNew ? '<button class="btn" id="bfDel" style="color:#b42318">Supprimer</button>' : ''}</div>`);
+    const box = $('#mbox');
+    box.querySelectorAll('[data-bf]').forEach(i => i.oninput = () => { const k = i.dataset.bf; m[k] = k === 'name' || k === 'sc' ? i.value : (i.value.trim() === '' ? '' : +i.value.replace(',', '.')); $('#brPrev').innerHTML = brSvg(m, true); });
+    box.querySelectorAll('[data-bt]').forEach(x => x.onclick = () => { m.type = x.dataset.bt; draw(); });
+    box.querySelectorAll('[data-bc]').forEach(x => x.onclick = () => { m.col = x.dataset.bc; draw(); });
+    $('#bfOk').onclick = () => {
+      for (const k of ['a', 'l', 'w']) if (!(m[k] > 0)) return toast('Il manque les mesures : aile 1, aile 2 et largeur');
+      m.h = Math.max(1, Math.round(+m.h || 1)); m.name = (m.name || '').trim() || `Équerre ${m.a} × ${m.l}`;
+      const ms = brModels(), i = ms.findIndex(x => x.id === m.id); if (i >= 0) ms[i] = m; else ms.push(m); brSaveModels(ms);
+      // les équerres déjà posées avec ce modèle suivent la modification
+      let hit = false; for (const p of parts('murale')) if (p.m === m.id) { wallApply(p, m); hit = true; } for (const b of Object.values(D.brackets || {})) if (b.m === m.id) { asmApply(b, m); hit = true; }
+      if (hit) { pushUndo(); changed(); }
+      toast(isNew ? 'Modèle ajouté' : 'Modèle modifié'); done && done(m);
+    };
+    if ($('#bfDel')) $('#bfDel').onclick = e => { const u = brUsage()[m.id] || 0, bt = e.currentTarget; if (!bt.dataset.sure) { bt.dataset.sure = 1; bt.textContent = u ? `Supprimer ? (${u} posée(s) restent)` : 'Sûr ? Supprimer'; return; } brSaveModels(brModels().filter(x => x.id !== m.id)); if (BRCUR[m.type] === m.id) BRCUR[m.type] = null; toast('Modèle supprimé'); done && done(null); };
+  };
+  draw();
+}
+
 // ---------- Équerres murales : les étagères tiennent au mur ; plan de pose ultra simple ----------
 // pièce { k:'murale', b: étagère, off: mm du bout gauche de l'étagère à l'axe de l'équerre, a: aile au mur (mm), l: aile sous l'étagère (mm) }
 const WALL_SIZES = [[75, 100], [100, 125], [125, 150], [150, 200], [200, 250]];
 const WALL_W = 30; // largeur d'une équerre vue de face
-function wallGeom(p) { const r = rect(byId(p.b)); return { cx: r.x0 + p.off, top: r.y0, bot: r.y0 - p.wa, w: WALL_W, r }; }
+function wallGeom(p) { const r = rect(byId(p.b)); return { cx: r.x0 + p.off, top: r.y0, bot: r.y0 - p.wa, w: p.ww || WALL_W, r }; }
 const wallNum = () => { const ls = parts('murale').map(p => ({ p, g: wallGeom(p) })).sort((a, b) => b.g.top - a.g.top || a.g.cx - b.g.cx); const m = {}; ls.forEach((o, i) => m[o.p.id] = i + 1); return m; };
 function drawWall() {
   const num = wallNum();
   for (const p of parts('murale')) {
     const g = wallGeom(p), on = selPart === p, [ax, ay] = toS(g.cx - g.w / 2, g.top), [bx, by] = toS(g.cx + g.w / 2, g.bot), w = bx - ax, h = by - ay;
-    cx.fillStyle = on ? '#f08c00' : '#5c636a'; cx.fillRect(ax, ay, w, h);
+    cx.fillStyle = on ? '#f08c00' : p.col === 'blanc' ? '#b9b9b2' : p.col ? brCol(p.col) : '#5c636a'; cx.fillRect(ax, ay, w, h);
     cx.fillStyle = 'rgba(255,255,255,.55)'; const d = Math.max(1.2, 2.5 * Vw.s); [.3, .72].forEach(f => { cx.beginPath(); cx.arc(ax + w / 2, ay + h * f, d, 0, 7); cx.fill(); });
     if (on) { cx.strokeStyle = '#d9480f'; cx.lineWidth = 2; cx.strokeRect(ax - 2, ay - 2, w + 4, h + 4); }
     const n = num[p.id], [nx, ny] = [ax + w / 2, by + 11]; cx.fillStyle = '#c92a2a'; cx.beginPath(); cx.arc(nx, ny, 8, 0, 7); cx.fill(); cx.fillStyle = '#fff'; cx.font = '800 10px -apple-system,Segoe UI,sans-serif'; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(n, nx, ny + .5);
@@ -1202,33 +1286,34 @@ function wallTap(wx, wy) {
   let best = null, bd = 1e9;
   for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (wx < r.x0 - 2 || wx > r.x1 + 2) continue; const d = r.y0 - wy; if (d < -30 / Vw.s || d > 500) continue; if (d < bd) { bd = d; best = b; } }
   if (!best) return toast('Touche juste sous l\'étagère, là où tu veux l\'équerre');
-  const r = rect(best), last = [...parts('murale')].pop(), dpt = depth(best);
-  const sz = last ? [last.wa, last.wl] : (WALL_SIZES.filter(([, l]) => l <= dpt * .85).pop() || WALL_SIZES[0]);
-  pushUndo(); const off = clamp(Math.round(wx - r.x0), WALL_W / 2, best.L - WALL_W / 2), p = { id: uid(), k: 'murale', b: best.id, off, wa: sz[0], wl: sz[1] };
+  const m = brModel(BRCUR.mur);
+  if (!m) { if (!brModels().some(x => x.type === 'mur')) { toast('Crée d\'abord ton modèle d\'équerre'); brModelForm('mur', null, mm => { closeModal(); BRCUR.mur = mm.id; buildHelp(); }); } else { toast('Choisis d\'abord ton modèle d\'équerre, en bas'); buildHelp(); } return; }
+  const r = rect(best), hw = (m.w || WALL_W) / 2;
+  pushUndo(); const off = clamp(Math.round(wx - r.x0), hw, best.L - hw), p = { id: uid(), k: 'murale', b: best.id, off }; wallApply(p, m);
   D.parts = D.parts || []; D.parts.push(p); selPart = p; panelOn = true; changed(); toast(`Équerre à ${fmt(off)} cm du bout gauche`);
 }
 function wallPanelHtml(p) {
   const b = byId(p.b), g = wallGeom(p), num = wallNum()[p.id], warn = wallWarn(b), dpt = depth(b);
   return `<div style="font-size:12px;color:var(--mute);line-height:1.45">Équerre n° <b style="color:#c92a2a">${num}</b> sous <span class="tag">${boardInfo()[b.id].code}</span> · aile au mur ${fmt(p.wa)} cm, sous l'étagère ${fmt(p.wl)} cm${p.wl > dpt ? ' <b style="color:#b42318">(dépasse de l\'étagère)</b>' : ''}. Glisse-la pour la déplacer.</div>
     <div class="grid2" style="margin-top:8px">${field('Depuis le bout gauche (cm)', 'woff', p.off)}${field('Depuis le bout droit (cm)', 'woffR', b.L - p.off)}</div>
-    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Taille (mur × étagère, en mm)</div>
-    <div class="seg" style="flex-wrap:wrap">${WALL_SIZES.map(([a, l]) => `<button data-wsz="${a}x${l}" class="${p.wa === a && p.wl === l ? 'on' : ''}">${a} × ${l}</button>`).join('')}</div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 0">Modèle${p.mn ? ` : ${esc(p.mn)}` : ` : ${p.wa} × ${p.wl} mm`}</div>
+    ${brPickHtml('mur', p.m)}
     ${warn.length ? `<div style="font-size:12px;color:#b42318;margin-top:6px;line-height:1.4">⚠ ${warn.join('<br>⚠ ')}</div>` : ''}
-    <div class="row"><button class="btn" id="wSym">⇔ Équerre symétrique</button><button class="btn" id="wAll">Cette taille partout</button><button class="btn" id="wPlan">📋 Plan de pose</button></div>`;
+    <div class="row"><button class="btn" id="wSym">⇔ Équerre symétrique</button><button class="btn" id="wAll">Ce modèle partout</button><button class="btn" id="wPlan">📋 Plan de pose</button></div>`;
 }
 function wallPanelBind(P, p, set) {
   const b = byId(p.b), inp = (k, f) => { const i = P.querySelector(`[data-k="${k}"]`); if (i) i.onchange = () => { const v = parseCm(i.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); set(() => f(v)); }; };
-  inp('woff', v => p.off = clamp(v, WALL_W / 2, b.L - WALL_W / 2)); inp('woffR', v => p.off = clamp(b.L - v, WALL_W / 2, b.L - WALL_W / 2));
-  P.querySelectorAll('[data-wsz]').forEach(x => x.onclick = () => set(() => { const [a, l] = x.dataset.wsz.split('x').map(Number); p.wa = a; p.wl = l; }));
+  const hw = (p.ww || WALL_W) / 2; inp('woff', v => p.off = clamp(v, hw, b.L - hw)); inp('woffR', v => p.off = clamp(b.L - v, hw, b.L - hw));
+  brPickBind(P, 'mur', m => { if (!m) return; BRCUR.mur = m.id; set(() => wallApply(p, m)); }, () => changed(false));
   $('#wSym').onclick = () => set(() => { const q = { ...p, id: uid(), off: b.L - p.off }; if (Math.abs(q.off - p.off) < 5) return toast('Elle est déjà au milieu'); D.parts.push(q); selPart = q; });
-  $('#wAll').onclick = () => set(() => { for (const q of parts('murale')) { q.wa = p.wa; q.wl = p.wl; } });
+  $('#wAll').onclick = () => set(() => { const m = brModel(p.m); for (const q of parts('murale')) { if (m) wallApply(q, m); else { q.wa = p.wa; q.wl = p.wl; q.ww = p.ww; q.col = p.col; } } toast('Toutes les équerres murales ont ce modèle'); });
   $('#wPlan').onclick = () => { debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 50); };
 }
 // ---- plan de pose ----
 function wallPlan() {
   const ws = parts('murale'); if (!ws.length) return null;
   const s = S(), floor = s.wallFloor || 0, bb = bbox(), x0 = bb.x0, num = wallNum(), I = boardInfo();
-  const br = ws.map(p => { const g = wallGeom(p); return { n: num[p.id], p, hTop: g.top + floor - bb.y0, x: g.cx - x0, size: `${p.wa} × ${p.wl}` }; }).sort((a, b) => a.n - b.n);
+  const br = ws.map(p => { const g = wallGeom(p); return { n: num[p.id], p, hTop: g.top + floor - bb.y0, x: g.cx - x0, size: `${p.mn ? p.mn + ' · ' : ''}${p.wa} × ${p.wl}` }; }).sort((a, b) => a.n - b.n);
   const shelves = [...new Set(ws.map(p => p.b))].map(byId).map(b => { const r = rect(b); return { b, code: I[b.id].code, name: I[b.id].name, left: r.x0 - x0, top: r.y1 + floor - bb.y0, bottom: r.y0 + floor - bb.y0, L: b.L, ns: br.filter(o => o.p.b === b.id).map(o => o.n) }; }).sort((a, b) => b.top - a.top);
   return { br, shelves, floor, bb };
 }
@@ -1464,12 +1549,15 @@ function buildHelp() {
     porte: 'Touche une case : une porte la ferme. Ensuite tu choisis en applique ou encastrée, 1 ou 2 vantaux, le côté des charnières.',
     tiroir: 'Touche une case : elle devient un tiroir. Tu peux en mettre plusieurs l\'un au-dessus de l\'autre. Le caisson du tiroir est calculé et ajouté au débit.',
     pied: 'Touche sous la planche du bas : 2 pieds se posent aux extrémités (×2 avec ceux de derrière). Achetés ou en pin, à la hauteur que tu veux.',
-    murale: 'Touche juste sous une étagère, à l\'endroit exact où tu veux une équerre : elle s\'y pose. Glisse-la pour l\'ajuster, ou tape sa distance au bout. L\'app te sort ensuite un plan de pose (Débit) : où percer le mur pour que les étagères tombent pile.',
+    murale: 'Aucune équerre n\'est posée d\'office : choisis ton modèle, puis touche sous une étagère, à l\'endroit exact où tu la veux. Glisse-la pour l\'ajuster. Le plan de pose au mur est dans Débit.',
     tasseau: 'Touche une étagère : 2 tasseaux se posent dessous, contre les montants, pour la porter.',
     dos: 'Touche un caisson : un fond se pose derrière, à ses dimensions extérieures (contreplaqué ou pin).',
   }[k];
   P.style.display = 'block';
-  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' || k === 'porte' || k === 'murale' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>`;
+  const bt = k === 'murale' ? 'mur' : k === 'joint' ? 'asm' : null; if (bt) brAdopt();
+  const pick = bt ? `<div style="font-size:13px;font-weight:700;margin-top:8px">${bt === 'mur' ? '1. Choisis ton équerre' : 'Équerre à poser (facultatif)'}</div>${brModels().some(m => m.type === bt) ? '' : `<div style="font-size:12px;color:var(--mute)">Tu n'as pas encore de modèle : crée le tien avec tes mesures.</div>`}${brPickHtml(bt, BRCUR[bt])}${bt === 'mur' ? `<div style="font-size:13px;font-weight:700;margin-top:8px">2. Touche sous l'étagère pour la poser</div>` : ''}` : '';
+  P.innerHTML = `<h3><span>${PART_I[k]} ${PART_N[k]}${k === 'pied' || k === 'tasseau' || k === 'porte' || k === 'murale' ? 's' : ''}</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">${txt}</div>${pick}`;
+  if (bt) brPickBind(P, bt, m => { if (!m) return; BRCUR[bt] = BRCUR[bt] === m.id ? null : m.id; buildHelp(); }, () => buildHelp());
   $('#pClose').onclick = () => setTool('sel'); if ($('#tTools')) $('#tTools').onclick = e => { e.preventDefault(); toolsDialog(); };
 }
 
@@ -1567,9 +1655,9 @@ function draw() {
 function drawGrid() {
   const step = niceStep(14, [10, 50, 100, 500, 1000]);
   const [x0, y1] = toW(R, R), [x1, y0] = toW(W - R, H - R);
-  cx.lineWidth = 1;
-  for (let v = Math.floor(x0 / step) * step; v <= x1; v += step) { const [sx] = toS(v, 0); cx.strokeStyle = v === 0 ? '#bfa98a' : (v % (step * 10) === 0 ? '#ebe1d1' : '#f2ebdf'); cx.beginPath(); cx.moveTo(Math.round(sx) + .5, R); cx.lineTo(Math.round(sx) + .5, H - R); cx.stroke(); }
-  for (let v = Math.floor(y0 / step) * step; v <= y1; v += step) { const [, sy] = toS(0, v); cx.strokeStyle = v === 0 ? '#bfa98a' : (v % (step * 10) === 0 ? '#ebe1d1' : '#f2ebdf'); cx.beginPath(); cx.moveTo(R, Math.round(sy) + .5); cx.lineTo(W - R, Math.round(sy) + .5); cx.stroke(); }
+  cx.lineWidth = 1; const z0 = vis('showGuides') ? '#bfa98a' : null; // les axes zéro se cachent avec les règles
+  for (let v = Math.floor(x0 / step) * step; v <= x1; v += step) { const [sx] = toS(v, 0); cx.strokeStyle = v === 0 ? z0 || (v % (step * 10) === 0 ? '#ebe1d1' : '#f2ebdf') : (v % (step * 10) === 0 ? '#ebe1d1' : '#f2ebdf'); cx.beginPath(); cx.moveTo(Math.round(sx) + .5, R); cx.lineTo(Math.round(sx) + .5, H - R); cx.stroke(); }
+  for (let v = Math.floor(y0 / step) * step; v <= y1; v += step) { const [, sy] = toS(0, v); cx.strokeStyle = v === 0 ? z0 || (v % (step * 10) === 0 ? '#ebe1d1' : '#f2ebdf') : (v % (step * 10) === 0 ? '#ebe1d1' : '#f2ebdf'); cx.beginPath(); cx.moveTo(R, Math.round(sy) + .5); cx.lineTo(W - R, Math.round(sy) + .5); cx.stroke(); }
 }
 function drawBoard(b, isSel, letter, ghost) {
   const ga = cx.globalAlpha;
@@ -2016,7 +2104,7 @@ cv.addEventListener('pointermove', e => {
   else if (drag.type === 'pmove' && drag.p.k === 'murale') {
     const p = drag.p, r = rect(byId(p.b)); let c = wx - drag.dx; const step = 10; c = r.x0 + Math.round((c - r.x0) / step) * step;
     const mid = (r.x0 + r.x1) / 2; if (Math.abs(c - mid) < 8 / Vw.s) c = mid;
-    p.off = clamp(c - r.x0, WALL_W / 2, p.b && byId(p.b).L - WALL_W / 2); liveLabel = [sx, sy, `${fmt(p.off)} cm du bout gauche · ${fmt(byId(p.b).L - p.off)} du droit`];
+    p.off = clamp(c - r.x0, (p.ww || WALL_W) / 2, byId(p.b).L - (p.ww || WALL_W) / 2); liveLabel = [sx, sy, `${fmt(p.off)} cm du bout gauche · ${fmt(byId(p.b).L - p.off)} du droit`];
   }
   else if (drag.type === 'pmove') {
     const p = drag.p, r = rect(byId(p.b)), w = p.w; let c = clamp(wx - drag.dx, r.x0 + w / 2, r.x1 - w / 2);
@@ -2454,8 +2542,8 @@ function settingsDialog() {
     <label class="f">Vis par jonction<input id="sSpj" ${KPATTR} value="${s.screwsPerJoint}"></label>
     <label class="f">Type de vis<input id="sScr" value="${s.screwType}"></label></div>
     <p style="color:var(--mute);font-size:12px">L'épaisseur et la largeur s'appliquent aux nouvelles planches. Les planches déjà posées gardent leurs valeurs (modifiables une par une).</p>
-    <div class="row"><button class="btn pri" id="sOk">Enregistrer</button><button class="btn" id="sTools">🪛 Ma visseuse</button><button class="btn" id="sLockAll">🔒 Tout verrouiller</button>${hiddenDims() ? `<button class="btn" id="sShowDims">👁 Réafficher ${hiddenDims()} cote(s) supprimée(s)</button>` : ''}<button class="btn" id="sUnlockAll">🔓 Tout déverrouiller</button></div>`);
-  $('#sTools').onclick = () => { closeModal(); toolsDialog(); };
+    <div class="row"><button class="btn pri" id="sOk">Enregistrer</button><button class="btn" id="sTools">🪛 Ma visseuse</button><button class="btn" id="sBrM">📐 Mes équerres</button><button class="btn" id="sLockAll">🔒 Tout verrouiller</button>${hiddenDims() ? `<button class="btn" id="sShowDims">👁 Réafficher ${hiddenDims()} cote(s) supprimée(s)</button>` : ''}<button class="btn" id="sUnlockAll">🔓 Tout déverrouiller</button></div>`);
+  $('#sTools').onclick = () => { closeModal(); toolsDialog(); }; $('#sBrM').onclick = () => brModelsDialog(() => changed(false));
   if ($('#sShowDims')) $('#sShowDims').onclick = () => { closeModal(); showHiddenDims(); };
   $('#sLockAll').onclick = () => { pushUndo(); [...D.boards, ...D.books].forEach(x => x.lk = true); closeModal(); changed(); toast('🔒 Tout est verrouillé'); };
   $('#sUnlockAll').onclick = () => { pushUndo(); [...D.boards, ...D.books].forEach(x => delete x.lk); closeModal(); changed(); toast('🔓 Tout est déverrouillé'); };
@@ -3135,15 +3223,17 @@ function buildScrews3() {
     if (on && !pts.length) { const m = new THREE.Mesh(new THREE.SphereGeometry(10, 12, 8), mats.screwSel); m.position.set(...mid); g.screws.add(m); }
     const br = brOf(j);
     if (br) { // équerres en L dans le coin, réparties sur la profondeur
-      const gj = jGeo(j), sd = brSide(j), [bx, by] = gj.corners[sd], a = br.a || 40, sg = sd === '+' ? 1 : -1, d = Math.min(depth(j.A), depth(j.B)), wd = Math.max(12, a * .4), th = 2.5, bm = brCheck(j).ok ? (mats.bracket = mats.bracket || new THREE.MeshStandardMaterial({ color: 0x8a8f96, metalness: .7, roughness: .35 })) : mats.screwBad;
+      const gj = jGeo(j), a = br.a || 40, l = br.l || a, d = Math.min(depth(j.A), depth(j.B)), wd = br.w || Math.max(12, a * .4), th = 2.5, ck = 'br_' + (br.col || 'acier');
+      const bm = brCheck(j).ok ? (mats[ck] = mats[ck] || new THREE.MeshStandardMaterial({ color: (BR_COL[br.col] || BR_COL.acier)[2], metalness: br.col === 'blanc' || br.col === 'noir' ? .2 : .7, roughness: .35 })) : mats.screwBad;
       const zs = br.n === 1 ? [d / 2] : Array.from({ length: br.n }, (_, i) => d * (i + 1) / (br.n + 1));
+      for (const sd of brSides(j)) { const [bx, by] = gj.corners[sd], sg = sd === '+' ? 1 : -1;
       for (const z of zs) {
-        const w1 = gj.axis === 'y' ? new THREE.BoxGeometry(a, th, wd) : new THREE.BoxGeometry(th, a, wd), w2 = gj.axis === 'y' ? new THREE.BoxGeometry(th, a, wd) : new THREE.BoxGeometry(a, th, wd);
+        const w1 = gj.axis === 'y' ? new THREE.BoxGeometry(a, th, wd) : new THREE.BoxGeometry(th, a, wd), w2 = gj.axis === 'y' ? new THREE.BoxGeometry(th, l, wd) : new THREE.BoxGeometry(l, th, wd);
         const m1 = new THREE.Mesh(w1, bm), m2 = new THREE.Mesh(w2, bm);
-        if (gj.axis === 'y') { m1.position.set(bx + sg * a / 2, by + gj.inward * th / 2, z); m2.position.set(bx + sg * th / 2, by + gj.inward * a / 2, z); }
-        else { m1.position.set(bx + gj.inward * th / 2, by + sg * a / 2, z); m2.position.set(bx + gj.inward * a / 2, by + sg * th / 2, z); }
+        if (gj.axis === 'y') { m1.position.set(bx + sg * a / 2, by + gj.inward * th / 2, z); m2.position.set(bx + sg * th / 2, by + gj.inward * l / 2, z); }
+        else { m1.position.set(bx + gj.inward * th / 2, by + sg * a / 2, z); m2.position.set(bx + gj.inward * l / 2, by + sg * th / 2, z); }
         m1.userData.joint = m2.userData.joint = j.key; g.screws.add(m1, m2);
-      }
+      } }
     }
   }
   render3();
@@ -3196,7 +3286,7 @@ function partBoxes() {
   const out = [], t = S().t;
   for (const p of parts('dos')) { const o = outerRect(p.a), e = p.mat === 'pin' ? t : (p.ep || 5); out.push([o.x0, o.y0, -e, o.x1, o.y1, 0, p.mat === 'pin' ? 'w' : '#cfb489']); }
   for (const p of parts('tasseau')) { const g = cleatGeom(p); out.push([g.x0, g.y0, 0, g.x1, g.y1, g.L, '#c99a62']); }
-  for (const p of parts('murale')) { const g = wallGeom(p); out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 4, '#5c636a']); out.push([g.cx - g.w / 2, g.top - 4, 0, g.cx + g.w / 2, g.top, p.wl, '#5c636a']); }
+  for (const p of parts('murale')) { const g = wallGeom(p); const c = p.col ? brCol(p.col) : '#5c636a'; out.push([g.cx - g.w / 2, g.bot, 0, g.cx + g.w / 2, g.top, 4, c]); out.push([g.cx - g.w / 2, g.top - 4, 0, g.cx + g.w / 2, g.top, p.wl, c]); }
   for (const p of parts('pied')) {
     const g = legGeom(p), d = depth(byId(p.b)), zs = p.pair === false ? [d / 2] : [d - p.ins - g.w / 2, p.ins + g.w / 2], col = p.src === 'pin' ? 'w' : p.shape === 'epingle' ? '#2a2a2a' : '#c8955a';
     const shape = p.src === 'pin' ? 'box' : p.shape === 'rond' ? 'cyl' : p.shape === 'compas' ? 'cone' : p.shape === 'epingle' ? 'pin' : 'box';
