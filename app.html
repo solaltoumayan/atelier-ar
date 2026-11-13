@@ -399,6 +399,8 @@ const BOOKS = {
   manga: { n: 'Manga', h: 180, e: 18, p: 115, v: 0, manga: true, pal: ['#e63946', '#1d3557', '#2a9d8f', '#f4a261', '#6a4c93', '#111111'] },
   comics: { n: 'Comics', h: 260, e: 15, p: 170, v: .02, pal: ['#d62828', '#003049', '#fcbf49', '#2b2d42', '#8d99ae', '#f77f00'] },
   beau: { n: 'Beau livre', h: 300, e: 30, p: 240, v: .1, pal: ['#2b2d42', '#edf2f4', '#8d99ae', '#d4a373', '#606c38', '#bc6c25'] },
+  bebe: { n: 'Livre bébé', h: 165, e: 17, p: 165, v: .18, baby: true, pal: ['#ffadad', '#ffd6a5', '#fdffb6', '#caffbf', '#9bf6ff', '#a0c4ff', '#bdb2ff', '#ffc6ff', '#ff8fab', '#90dbf4'] },
+  album: { n: 'Album jeunesse', h: 290, e: 9, p: 230, v: .06, pal: ['#e63946', '#ffb703', '#219ebc', '#8ecae6', '#fb8500', '#90be6d', '#f28482', '#577590', '#ffd166'] },
 };
 let bookFmt = 'roman', selBook = null;
 const rng = (seed, i) => { const x = Math.sin(seed * 9301.7 + i * 49297.3) * 233280; return x - Math.floor(x); };
@@ -415,6 +417,14 @@ function drawBookRow(k, isSel) {
     const col = fm.manga ? '#f7f5ef' : fm.pal[Math.floor(rng(k.seed + 7, i) * fm.pal.length)];
     cx.fillStyle = col; cx.fillRect(sx, sy, w, h);
     if (fm.manga) { cx.fillStyle = fm.pal[(k.seed + Math.floor(i / 12)) % fm.pal.length]; cx.fillRect(sx, sy, w, h * .16); if (w > 9 && h > 40) { cx.fillStyle = '#333'; cx.font = `600 ${Math.min(10, w * .7)}px -apple-system,sans-serif`; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillText(String(i + 1), sx + w / 2, sy + h * .88); } }
+    else if (fm.baby && w > 4 && h > 16) { // livre cartonné : dos arrondi, petit motif
+      cx.fillStyle = 'rgba(255,255,255,.35)'; cx.fillRect(sx + w * .15, sy + 1, Math.max(1, w * .18), h - 2);
+      const m = Math.floor(rng(k.seed + 3, i) * 3), mx = sx + w / 2, my = sy + h * .35, r = Math.min(w * .3, h * .08);
+      cx.fillStyle = ['#ffffff', '#ff6b6b', '#ffd43b'][Math.floor(rng(k.seed + 5, i) * 3)];
+      if (m === 0) { cx.beginPath(); cx.arc(mx, my, r, 0, 7); cx.fill(); }
+      else if (m === 1) { cx.beginPath(); cx.moveTo(mx, my + r); cx.bezierCurveTo(mx - r * 1.6, my - r * .2, mx - r * .6, my - r * 1.4, mx, my - r * .4); cx.bezierCurveTo(mx + r * .6, my - r * 1.4, mx + r * 1.6, my - r * .2, mx, my + r); cx.fill(); }
+      else { cx.beginPath(); for (let q = 0; q < 10; q++) { const a = -Math.PI / 2 + q * Math.PI / 5, rr = q % 2 ? r * .45 : r; cx.lineTo(mx + Math.cos(a) * rr, my + Math.sin(a) * rr); } cx.fill(); }
+    }
     else if (w > 4 && h > 30) { cx.fillStyle = 'rgba(0,0,0,.16)'; cx.fillRect(sx, sy + h * .07, w, Math.max(1, h * .025)); cx.fillRect(sx, sy + h * .86, w, Math.max(1, h * .03)); if (w > 7) { cx.fillStyle = 'rgba(255,255,255,.35)'; cx.fillRect(sx + w * .3, sy + h * .3, w * .4, h * .3); } }
     if (w > 2) { cx.strokeStyle = 'rgba(0,0,0,.3)'; cx.lineWidth = .7; cx.strokeRect(sx + .35, sy + .35, w - .7, h - .7); }
   }
@@ -452,6 +462,7 @@ const OBJS = {
   lampe: { n: 'Lampe', f: 1, r: .62, h: 450 }, champi: { n: 'Lampe champignon', f: 1, r: .85, h: 320 }, globe: { n: 'Globe', r: .72, h: 380 },
   plante: { n: 'Plante', f: 1, r: .72, h: 420 }, vase: { n: 'Vase', r: .5, h: 320 }, cadre: { n: 'Cadre', r: .78, h: 260 },
   reveil: { n: 'Réveil', r: .95, h: 160 }, photo: { n: 'Appareil photo', r: 1.45, h: 110 }, vin: { n: 'Bouteille', f: 1, r: .27, h: 300 },
+  ourson: { n: 'Ourson', r: .85, h: 200 }, lapin: { n: 'Lapin doudou', r: .62, h: 220 }, elephant: { n: 'Éléphant', r: 1.15, h: 140 }, girafe: { n: 'Girafe', f: 1, r: .62, h: 260 }, canard: { n: 'Canard de bain', r: 1.05, h: 100 },
 };
 let objKind = null, selObj = null;
 const objW = o => o.h * OBJS[o.t].r;
@@ -519,6 +530,43 @@ function paintObj(c, t, X, Y, W, H) { // X,Y = coin haut-gauche (px), W×H = tai
     poly([[.33, 0], [.67, 0], [.67, .16], [.33, .16]], lg(0, .16, '#7a2236', '#4a1020'));
     poly([[.06, .58], [.94, .58], [.94, .86], [.06, .86]], '#efe5cf');
     c.fillStyle = '#5b1a2b'; poly([[.2, .64], [.8, .64], [.8, .67], [.2, .67]], '#5b1a2b'); poly([[.28, .72], [.72, .72], [.72, .74], [.28, .74]], '#8a7a5a'); poly([[.3, .78], [.7, .78], [.7, .8], [.3, .8]], '#8a7a5a');
+  } else if (t === 'ourson') { // ourson en peluche, assis
+    const fur = '#c68b59', dk = '#9a6337', lt = '#f1d3b3';
+    ell(.5, .74, .34, .25, fur); ell(.24, .93, .14, .07, dk); ell(.76, .93, .14, .07, dk); ell(.24, .93, .08, .04, lt); ell(.76, .93, .08, .04, lt);
+    ell(.17, .66, .1, .14, dk); ell(.83, .66, .1, .14, dk); ell(.5, .78, .17, .14, lt);
+    ell(.24, .12, .12, .1, fur); ell(.76, .12, .12, .1, fur); ell(.24, .12, .06, .05, lt); ell(.76, .12, .06, .05, lt);
+    ell(.5, .33, .32, .26, fur); ell(.5, .42, .14, .1, lt); ell(.5, .37, .045, .03, '#3b2416'); ell(.38, .28, .03, .025, '#1b1b1b'); ell(.62, .28, .03, .025, '#1b1b1b');
+    c.strokeStyle = '#3b2416'; c.lineWidth = Math.max(.8, W * .015); c.beginPath(); c.moveTo(...L(.5, .4)); c.lineTo(...L(.5, .45)); c.stroke();
+    poly([[.36, .55], [.64, .55], [.58, .62], [.5, .58], [.42, .62]], '#d64545');
+  } else if (t === 'lapin') { // lapin doudou, longues oreilles
+    const fur = '#f3ece6', pk = '#f4b4c4', sh = '#e2d6cc';
+    ell(.32, .2, .1, .2, fur); ell(.68, .2, .1, .2, fur); ell(.32, .21, .05, .14, pk); ell(.68, .21, .05, .14, pk);
+    ell(.5, .78, .3, .22, fur); ell(.5, .82, .16, .13, sh); ell(.3, .96, .13, .05, sh); ell(.7, .96, .13, .05, sh);
+    ell(.5, .48, .26, .2, fur); ell(.4, .45, .03, .035, '#2b2b2b'); ell(.6, .45, .03, .035, '#2b2b2b'); ell(.5, .52, .035, .025, pk);
+    ell(.34, .53, .05, .03, 'rgba(244,150,170,.45)'); ell(.66, .53, .05, .03, 'rgba(244,150,170,.45)');
+    poly([[.4, .63], [.6, .63], [.55, .68], [.5, .65], [.45, .68]], '#8ecae6');
+  } else if (t === 'elephant') { // petit éléphant de profil
+    const sk = '#a9b8c9', dk = '#8597ab';
+    ell(.55, .55, .36, .28, sk); poly([[.28, .7], [.4, .7], [.4, 1], [.28, 1]], sk); poly([[.62, .7], [.76, .7], [.76, 1], [.62, 1]], sk);
+    poly([[.44, .72], [.54, .72], [.54, .98], [.44, .98]], dk); poly([[.8, .66], [.88, .62], [.9, .96], [.81, .98]], dk);
+    ell(.27, .4, .2, .21, sk); ell(.36, .37, .13, .17, '#c4d0dd'); ell(.36, .37, .08, .11, '#f2b8c6');
+    c.strokeStyle = sk; c.lineCap = 'round'; c.lineWidth = Math.max(2, W * .09); c.beginPath(); c.moveTo(...L(.12, .45)); c.quadraticCurveTo(...L(.0, .65), ...L(.08, .82)); c.stroke(); c.lineCap = 'butt';
+    ell(.2, .34, .025, .03, '#2b2b2b'); c.strokeStyle = dk; c.lineWidth = Math.max(1, W * .02); c.beginPath(); c.moveTo(...L(.9, .5)); c.quadraticCurveTo(...L(.98, .55), ...L(.95, .66)); c.stroke();
+  } else if (t === 'girafe') { // girafe en bois / peluche
+    const y = '#f2c14e', sp = '#b9722f';
+    poly([[.38, .3], [.55, .3], [.56, .7], [.36, .7]], y); ell(.47, .7, .28, .16, y);
+    poly([[.25, .78], [.36, .78], [.36, 1], [.25, 1]], y); poly([[.58, .78], [.69, .78], [.69, 1], [.58, 1]], y);
+    ell(.52, .17, .2, .11, y); ell(.66, .2, .09, .07, '#e9b23b'); ell(.69, .19, .015, .015, '#5a3a1a');
+    poly([[.42, .03], [.45, .03], [.45, .1], [.42, .1]], sp); poly([[.52, .02], [.55, .02], [.55, .09], [.52, .09]], sp); ell(.435, .03, .025, .02, sp); ell(.535, .02, .025, .02, sp);
+    ell(.48, .15, .025, .025, '#2b2b2b'); ell(.33, .12, .06, .03, '#e9b23b');
+    [[.44, .4, .04], [.5, .55, .035], [.42, .62, .03], [.32, .7, .045], [.5, .72, .05], [.62, .68, .04], [.3, .9, .03], [.63, .9, .03]].forEach(([a, b, r]) => ell(a, b, r, r * .85, sp));
+    poly([[.22, .96], [.37, .96], [.37, 1], [.22, 1]], '#7a4a22'); poly([[.56, .96], [.71, .96], [.71, 1], [.56, 1]], '#7a4a22');
+  } else if (t === 'canard') { // canard de bain
+    const y = '#ffd23f', dk = '#e8b400';
+    ell(.52, .72, .44, .26, y); ell(.42, .74, .2, .12, dk); ell(.3, .36, .24, .3, y);
+    poly([[.04, .4], [.14, .34], [.16, .48]], '#f08a24'); poly([[.04, .4], [.16, .44], [.15, .48]], '#d96a12');
+    ell(.27, .29, .045, .05, '#fff'); ell(.255, .29, .025, .03, '#1b1b1b'); poly([[.86, .54], [1, .44], [.94, .66]], y);
+    c.globalAlpha = .35; ell(.4, .22, .06, .04, '#fff'); c.globalAlpha = 1;
   }
   c.restore();
 }
