@@ -256,7 +256,12 @@ $('#pinFix').onclick = () => setPinch(false); $('#pinFree').onclick = () => setP
   setTimeout(() => { if (!mv.canActivateAR) $('#note').textContent = 'La réalité augmentée n\'est pas disponible ici. Ouvre cette page dans Chrome sur ton téléphone Android (avec « Services Google Play pour la RA »). Tu peux quand même faire tourner le meuble en 3D.'; }, 2500);
 })();
 // retour au plan : ferme cet onglet (ouvert depuis l'app) ou revient en arrière
+const fromApp = new URLSearchParams(location.search).has('app');
 $('#back').onclick = () => {
+  if (fromApp) { // ouvert depuis l'appli installée : on revient au meuble, sans jamais fermer l'appli
+    if (history.length > 1) history.back(); else location.replace('./app.html');
+    return;
+  }
   if (history.length > 1) { history.back(); return; }
   window.close();
   setTimeout(() => { if (location.hostname.endsWith('github.io')) location.href = './app.html'; }, 300);
