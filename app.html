@@ -328,8 +328,60 @@ function coffreAt(x, y, W, H, d, mat, lw, fond) {
   if (fond) D.parts.push({ id: uid(), k: 'dos', a: { l: l.id, r: r.id, b: bas.id, t: haut.id }, mat: 'cp', ep: 5 });
   return n;
 }
-const TDL_BUILD = [['tdlBed', '🛏', 'Le lit'], ['tdlCoffre', '🧰', 'Coffre fermé'], ['tdlSlats', '▤', 'Lattes à plat'], ['tdlChevets', '🗄', 'Chevets'], ['tdlEx', '✨', 'Exemple']];
-const TDL_ACT = { tdlBed: () => bedDialog(), tdlCoffre: () => coffreDialog(), tdlSlats: () => slatsDialog(), tdlChevets: () => chevetsDialog(), tdlEx: () => tdlExample() };
+
+// fermer une zone : planches à plat posées devant (façade en applique), bord à bord, + fond derrière si on veut
+const aKey = a => [a.l, a.r, a.b, a.t].join('|');
+const facadeOf = a => D.boards.filter(b => b.fc === aKey(a));
+function closeTap(wx, wy) {
+  const c = cellAt(wx, wy), f = frameAnchors(wx, wy);
+  if (!c && !f) return toast('Touche l\'intérieur d\'une zone entourée de 4 planches');
+  closeDialog(c || f, c && f && !sameA(c, f) ? f : null);
+}
+function closeDialog(a, whole) {
+  const ids = [a.l, a.r, a.b, a.t].map(byId), sv = LS.get('atelier.close') || {}, ex = facadeOf(a);
+  const st = { dir: 'h', fond: !parts('dos').some(p => sameA(p.a, a)), front: true, ...sv, mat: matOf(ids[0]) };
+  const t = () => st.mat === 'chene' ? 20 : S().t, lwOf = () => { const L = store().filter(s => s.mat === st.mat && Math.abs(s.t - t()) < .6).map(s => s.W); return L.length ? Math.max(...L) : 200; };
+  const o = outerRect(a), W = o.x1 - o.x0, H = o.y1 - o.y0;
+  openModal(`<h2>🧱 Fermer cette zone<button class="btn" data-close>✕</button></h2>
+    <div style="font-size:13px;color:var(--mute);line-height:1.45">Zone de ${fmt(W)} × ${fmt(H)} cm. La façade se pose devant, en planches à plat bord à bord, et recouvre aussi le chant des planches autour.</div>
+    ${whole ? `<div class="seg" style="margin-top:8px"><button data-zw="0" class="on">Cette case</button><button data-zw="1">Tout le caisson</button></div>` : ''}
+    ${ex.length ? `<div class="row"><button class="btn danger" id="clOpen">Rouvrir (retirer les ${ex.length} planches de façade)</button></div>` : `
+    <div class="row" style="align-items:center"><span style="font-size:13px;flex:1">Façade devant</span><button class="btn${st.front ? ' pri' : ''}" data-tg="front">${st.front ? '✓ Oui' : 'Non'}</button></div>
+    <div class="row" style="align-items:center"><span style="font-size:13px;flex:1">Fond contre le mur (contreplaqué 5 mm)</span><button class="btn${st.fond ? ' pri' : ''}" data-tg="fond">${st.fond ? '✓ Oui' : 'Non'}</button></div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Sens des planches</div><div class="seg"><button data-sd="h" class="${st.dir === 'h' ? 'on' : ''}">━ Horizontales</button><button data-sd="v" class="${st.dir === 'v' ? 'on' : ''}">┃ Verticales</button></div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Bois</div><div class="seg">${Object.entries(MATS).map(([k, m]) => `<button data-cm="${k}" class="${st.mat === k ? 'on' : ''}">${m.n}</button>`).join('')}</div>
+    <div style="font-size:12px;color:var(--mute);margin-top:6px" id="clInfo"></div>
+    <div class="row"><button class="btn pri" id="clOk">Fermer la zone</button></div>`}`);
+  const box = $('#mbox'), keep = () => LS.set('atelier.close', { dir: st.dir, front: st.front });
+  const info = () => { const e = $('#clInfo'); if (!e) return; const S_ = st.dir === 'h' ? H : W, lw = lwOf(), n = Math.max(1, Math.ceil(S_ / lw - .001)); e.textContent = st.front ? `Façade : ${n} planche${n > 1 ? 's' : ''} de ${fmt(lw)} cm${n * lw > S_ + .5 ? ` (une refendue à ${fmt(S_ - (n - 1) * lw)} cm, ${st.dir === 'h' ? 'en bas' : 'à droite'})` : ''}, longueur ${fmt(st.dir === 'h' ? W : H)} cm` : 'Pas de façade : seulement le fond.'; };
+  info();
+  box.querySelectorAll('[data-zw]').forEach(x => x.onclick = () => { if (x.dataset.zw === '1') closeDialog(whole, null); });
+  box.querySelectorAll('[data-tg]').forEach(x => x.onclick = () => { const k = x.dataset.tg; st[k] = !st[k]; keep(); x.classList.toggle('pri', st[k]); x.textContent = st[k] ? '✓ Oui' : 'Non'; info(); });
+  box.querySelectorAll('[data-sd]').forEach(x => x.onclick = () => { st.dir = x.dataset.sd; keep(); box.querySelectorAll('[data-sd]').forEach(y => y.classList.toggle('on', y === x)); info(); });
+  box.querySelectorAll('[data-cm]').forEach(x => x.onclick = () => { st.mat = x.dataset.cm; box.querySelectorAll('[data-cm]').forEach(y => y.classList.toggle('on', y === x)); info(); });
+  if ($('#clOpen')) $('#clOpen').onclick = () => { pushUndo(); const k = aKey(a); D.boards = D.boards.filter(b => b.fc !== k); closeModal(); changed(); toast('Façade retirée'); };
+  if ($('#clOk')) $('#clOk').onclick = () => {
+    if (!st.front && !st.fond) return toast('Choisis la façade, le fond, ou les deux');
+    pushUndo(); let n = 0;
+    if (st.front) {
+      const zf = Math.max(...ids.map(b => z0(b) + zExt(b))), lw = lwOf(), blk = uid(), Sz = st.dir === 'h' ? H : W; n = Math.max(1, Math.ceil(Sz / lw - .001)); let p0 = st.dir === 'h' ? o.y0 : o.x0;
+      for (let i = 0; i < n; i++) {
+        const w = st.dir === 'h' ? (i === 0 ? Sz - (n - 1) * lw : lw) : (i === n - 1 ? Sz - (n - 1) * lw : lw); // la planche refendue en bas (cachée par le lit) ou à droite
+        const b = st.dir === 'h' ? addBoard('h', o.x0, p0, W, t()) : addBoard('v', p0, o.y0, H, t());
+        b.f = true; b.d = Math.round(w); b.z = zf; if (st.mat !== 'pin') b.mat = st.mat; b.blk = blk; b.fc = aKey(a); p0 += w;
+      }
+    }
+    if (st.fond && !parts('dos').some(p => sameA(p.a, a))) D.parts.push({ id: uid(), k: 'dos', a: { ...a }, mat: 'cp', ep: 5 });
+    closeModal(); setTool('sel'); changed(); toast(st.front ? `🧱 Zone fermée : ${n} planche${n > 1 ? 's' : ''} de façade${st.fond ? ' + fond' : ''}` : 'Fond posé');
+  };
+}
+function closeHelp() {
+  const P = $('#panel'); P.style.display = 'block';
+  P.innerHTML = `<h3><span>🧱 Fermer une zone</span><button class="btn" id="pClose">Fini ✕</button></h3><div style="font-size:13px;color:var(--mute);line-height:1.45">Touche l'intérieur de la zone à fermer (entre 4 planches). Tu choisis ensuite la façade devant, le fond derrière, le sens des planches et le bois. Touche une zone déjà fermée pour la rouvrir.</div>`;
+  $('#pClose').onclick = () => setTool('sel');
+}
+const TDL_BUILD = [['tdlBed', '🛏', 'Le lit'], ['tdlCoffre', '🧰', 'Coffre fermé'], ['tdlClose', '🧱', 'Fermer'], ['tdlSlats', '▤', 'Lattes à plat'], ['tdlChevets', '🗄', 'Chevets'], ['tdlEx', '✨', 'Exemple']];
+const TDL_ACT = { tdlClose: () => setTool('tdlClose'), tdlBed: () => bedDialog(), tdlCoffre: () => coffreDialog(), tdlSlats: () => slatsDialog(), tdlChevets: () => chevetsDialog(), tdlEx: () => tdlExample() };
 function newTdl() { const d = newDesign(); d.mode = 'tdl'; d.name = 'Tête de lit'; d.bed = { W: 1800, L: 2000, hs: 550, hm: 200, x: 0 }; d.settings.v3wall = true; d.settings.v3view = '34'; return d; }
 // ---- planches du magasin (largeurs et longueurs selon le magasin), par bois et épaisseur ----
 const STORE_DEF = [{ mat: 'pin', t: 18, W: 200, L: 2000 }, { mat: 'chene', t: 20, W: 150, L: 2000 }, { mat: 'chene', t: 20, W: 200, L: 2000 }];
@@ -1953,7 +2005,7 @@ function buildHelp() {
 
 // ---------- Menu Construction ----------
 function updateBuildBtn() {
-  const b = $('#bBuild'), it = BUILD.find(x => x[0] === tool);
+  const b = $('#bBuild'), it = [...BUILD, ...TDL_BUILD].find(x => x[0] === tool);
   b.classList.toggle('on', !!it);
   b.querySelector('.ico').textContent = it ? it[1] : '🔨';
   b.querySelector('.bl').textContent = it ? ({ h: 'Planche', v: 'Planche', back: 'Fond', joint: 'Vis', asm: 'Assembler', wall: 'Murales' }[it[0]] || it[2]) : 'Construire';
@@ -2450,6 +2502,7 @@ cv.addEventListener('pointerdown', e => {
   }
   if (tool === 'asm') { drag = { ...base, type: 'pan', ox: Vw.ox, oy: Vw.oy, asmTap: [sx, sy, wx, wy] }; return; }
   if (tool === 'joint') { base.pw = panelOn; panelOn = false; drag = { ...base, type: 'pan', ox: Vw.ox, oy: Vw.oy, jointTap: [wx, wy] }; return; }
+  if (tool === 'tdlClose') { drag = { ...base, type: 'pan', ox: Vw.ox, oy: Vw.oy, closeTap: [wx, wy] }; return; }
   if (PT[tool]) {
     base.pw = panelOn; panelOn = false;
     const hp = hitPart(sx, sy);
@@ -2648,6 +2701,7 @@ function endPointer(e) {
   if (d.type === 'bmove' || d.type === 'bstretch') { panelOn = !d.moved; if (d.moved && !d.locked) pushUndo(d.pre); changed(d.moved); return; }
   if (d.type === 'pan' && d.asmTap) { if (!d.moved) asmTap(...d.asmTap); else draw(); return; }
   if (d.type === 'pan' && d.jointTap && !d.moved) { jointTap(...d.jointTap); return; }
+  if (d.type === 'pan' && d.closeTap && !d.moved) { closeTap(...d.closeTap); return; }
   if (d.type === 'pan' && d.jointTap) { panelOn = d.pw; draw(); return; }
   if (d.type === 'pan' && d.partTap && !d.moved) { partTap(tool, ...d.partTap); return; }
   if (d.type === 'pan' && d.partTap) { panelOn = d.pw; draw(); return; }
@@ -2712,6 +2766,7 @@ function renderPanel() {
   if (selPart && panelOn) return partPanel(selPart);
   if (selJoint && panelOn) { const j = jointList().find(x => x.key === selJoint); if (j) return jointPanel(j); selJoint = null; }
   if (tool === 'asm') return asmHelp();
+  if (tool === 'tdlClose') return closeHelp();
   if (PT[tool] || tool === 'joint') return buildHelp();
   const fmtChips = cur => Object.entries(BOOKS).map(([key, f]) => `<button class="btn${key === cur ? ' on' : ''}" data-f="${key}" style="padding:6px 9px">${f.n}</button>`).join('');
   if (tool === 'dim') {
