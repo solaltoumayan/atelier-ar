@@ -288,14 +288,48 @@ function slatsDialog() {
 function tdlExample() {
   if (D.boards.length) return toast('L\'exemple se pose sur une tête de lit vide');
   pushUndo(); D.bed = { W: 1800, L: 2000, hs: 550, hm: 200, x: 500 };
-  const blk = uid(), L = 2000, x = 400;
-  for (let i = 0; i < 6; i++) { const b = addBoard('h', x, 350 + i * 160, L, 20); b.f = true; b.d = 150; b.mat = 'chene'; b.blk = blk; }
-  const top = addBoard('h', x, 350 + 6 * 160, L, 20); top.d = 150; top.mat = 'chene'; // tablette sur le dessus, en saillie
+  coffreAt(500, 200, 1800, 600, 100, 'chene', 200, true); // coffre fermé de 10 cm derrière le lit, dessus à 80 cm
   for (const cxh of [0, 2350]) boxAt(cxh, 300, 450, 250, 200, 0, 'chene');
-  changed(); fitView(); toast('Exemple posé : lattes en chêne, tablette en relief et 2 chevets');
+  changed(); fitView(); toast('Exemple posé : coffre fermé en chêne derrière le lit et 2 chevets');
 }
-const TDL_BUILD = [['tdlBed', '🛏', 'Le lit'], ['tdlSlats', '▤', 'Lattes à plat'], ['tdlChevets', '🗄', 'Chevets'], ['tdlEx', '✨', 'Exemple']];
-const TDL_ACT = { tdlBed: () => bedDialog(), tdlSlats: () => slatsDialog(), tdlChevets: () => chevetsDialog(), tdlEx: () => tdlExample() };
+
+// coffre fermé derrière le lit : caisson peu profond, façade entièrement recouverte de planches à plat, dessus plein, fond contre le mur
+function coffreDialog() {
+  if (!D.bed) D.bed = bedDefault();
+  const B = D.bed, sv = LS.get('atelier.coffre') || {};
+  const st = { d: 100, bot: 200, top: B.hs + 250, mat: 'pin', fond: true, ...sv, W: B.W, x: B.x };
+  const lwOf = () => { const L = store().filter(s => s.mat === st.mat && Math.abs(s.t - (st.mat === 'chene' ? 20 : S().t)) < .6).map(s => s.W); return L.length ? Math.max(...L) : 200; };
+  openModal(`<h2>🧰 Coffre fermé derrière le lit<button class="btn" data-close>✕</button></h2>
+    <div style="font-size:13px;color:var(--mute);line-height:1.45">Un caisson peu profond, fixé au mur. La façade est entièrement recouverte de planches à plat, le dessus est plein pour poser des choses, et il n'y a aucune étagère ouverte.</div>
+    <div class="grid2" style="margin-top:8px">${field('Largeur (cm)', 'W', st.W)}${field('Profondeur du caisson (cm)', 'd', st.d)}${field('Bas, depuis le sol (cm)', 'bot', st.bot)}${field('Dessus, depuis le sol (cm)', 'top', st.top)}${field('Bord gauche (cm)', 'x', st.x)}</div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Bois</div><div class="seg">${Object.entries(MATS).map(([k, m]) => `<button data-cm="${k}" class="${st.mat === k ? 'on' : ''}">${m.n}</button>`).join('')}</div>
+    <div class="row" style="align-items:center"><span style="font-size:13px;flex:1">Fond contre le mur (contreplaqué 5 mm)</span><button class="btn${st.fond ? ' pri' : ''}" id="cfF">${st.fond ? '✓ Avec fond' : 'Sans fond'}</button></div>
+    <div style="font-size:12px;color:var(--mute)" id="cfInfo"></div>
+    <div class="row"><button class="btn pri" id="cfOk">Poser le coffre</button></div>`);
+  const box = $('#mbox'), keep = () => LS.set('atelier.coffre', { d: st.d, bot: st.bot, top: st.top, mat: st.mat, fond: st.fond });
+  const info = () => { const t = st.mat === 'chene' ? 20 : S().t, Hf = st.top - st.bot - 2 * t, lw = lwOf(), n = Math.max(1, Math.ceil(Hf / lw - .001)); $('#cfInfo').textContent = `Façade : ${n} planche${n > 1 ? 's' : ''} de ${fmt(lw)} cm à plat${n * lw > Hf + .5 ? ` (celle du bas refendue à ${fmt(Hf - (n - 1) * lw)} cm)` : ''} · profondeur totale ${fmt(st.d + t + (st.fond ? 5 : 0))} cm`; };
+  info();
+  box.querySelectorAll('input[data-k]').forEach(inp => inp.onchange = () => { const v = parseCm(inp.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); st[inp.dataset.k] = Math.round(v); keep(); info(); });
+  box.querySelectorAll('[data-cm]').forEach(x => x.onclick = () => { st.mat = x.dataset.cm; keep(); box.querySelectorAll('[data-cm]').forEach(y => y.classList.toggle('on', y === x)); info(); });
+  $('#cfF').onclick = () => { st.fond = !st.fond; keep(); $('#cfF').classList.toggle('pri', st.fond); $('#cfF').textContent = st.fond ? '✓ Avec fond' : 'Sans fond'; info(); };
+  $('#cfOk').onclick = () => {
+    const t = st.mat === 'chene' ? 20 : S().t, H = st.top - st.bot, Hf = H - 2 * t, lw = lwOf();
+    if (H < 3 * t + 20 || st.W < 3 * t || st.d < 20) return toast('Coffre trop petit');
+    pushUndo(); closeModal(); const n = coffreAt(st.x, st.bot, st.W, H, st.d, st.mat, lw, st.fond);
+    changed(); fitView(); toast(`🧰 Coffre posé : façade fermée par ${n} planche${n > 1 ? 's' : ''}, dessus plein`);
+  };
+}
+function coffreAt(x, y, W, H, d, mat, lw, fond) {
+  const t = mat === 'chene' ? 20 : S().t, g = uid(), blk = uid(), Hf = H - 2 * t;
+  const mk = (o, X, Y, L, dd) => { const b = addBoard(o, X, Y, L, t); b.d = dd; if (mat !== 'pin') b.mat = mat; b.g = g; b.blk = blk; return b; };
+  const bas = mk('h', x, y, W, d + t), haut = mk('h', x, y + H - t, W, d + t), l = mk('v', x, y + t, Hf, d), r = mk('v', x + W - t, y + t, Hf, d); // dessus et dessous couvrent aussi la façade
+  const n = Math.max(1, Math.ceil(Hf / lw - .001)), first = Hf - (n - 1) * lw; let yy = y + t;
+  for (let i = 0; i < n; i++) { const w = i === 0 ? first : lw, b = addBoard('h', x, yy, W, t); b.f = true; b.d = Math.round(w); b.z = d; if (mat !== 'pin') b.mat = mat; b.blk = blk; yy += w; } // la planche refendue en bas, cachée par le lit
+  if (fond) D.parts.push({ id: uid(), k: 'dos', a: { l: l.id, r: r.id, b: bas.id, t: haut.id }, mat: 'cp', ep: 5 });
+  return n;
+}
+const TDL_BUILD = [['tdlBed', '🛏', 'Le lit'], ['tdlCoffre', '🧰', 'Coffre fermé'], ['tdlSlats', '▤', 'Lattes à plat'], ['tdlChevets', '🗄', 'Chevets'], ['tdlEx', '✨', 'Exemple']];
+const TDL_ACT = { tdlBed: () => bedDialog(), tdlCoffre: () => coffreDialog(), tdlSlats: () => slatsDialog(), tdlChevets: () => chevetsDialog(), tdlEx: () => tdlExample() };
 function newTdl() { const d = newDesign(); d.mode = 'tdl'; d.name = 'Tête de lit'; d.bed = { W: 1800, L: 2000, hs: 550, hm: 200, x: 0 }; d.settings.v3wall = true; d.settings.v3view = '34'; return d; }
 // ---- planches du magasin (largeurs et longueurs selon le magasin), par bois et épaisseur ----
 const STORE_DEF = [{ mat: 'pin', t: 18, W: 200, L: 2000 }, { mat: 'chene', t: 20, W: 150, L: 2000 }, { mat: 'chene', t: 20, W: 200, L: 2000 }];
@@ -489,10 +523,10 @@ function boardInfo() {
     Vs.forEach((b, i) => info[b.id].name = (i === 0 ? 'Côté gauche' : i === Vs.length - 1 ? 'Côté droit' : 'Montant') + cz(c));
   }
   const groups = new Map(); // planches dans un caisson / libres, numérotées de bas en haut ou de gauche à droite
-  for (const b of D.boards) { if (frameOf[b.id]) continue; const h = hostCaisson(b), key = (h ? h.f[0].g : '-') + b.o; if (!groups.has(key)) groups.set(key, { h, list: [] }); groups.get(key).list.push(b); }
+  for (const b of D.boards) { if (frameOf[b.id]) continue; const h = b.f ? null : hostCaisson(b), key = (h ? h.f[0].g : '-') + b.o + (b.f ? 'f' : ''); if (!groups.has(key)) groups.set(key, { h, list: [] }); groups.get(key).list.push(b); }
   for (const { h, list } of groups.values()) {
     list.sort((a, b) => a.o === 'h' ? a.y - b.y || a.x - b.x : a.x - b.x || a.y - b.y);
-    list.forEach((b, i) => { const base = h ? (b.o === 'h' ? 'Étagère' : 'Séparation') : (b.o === 'h' ? 'Planche' : 'Montant'); info[b.id].name = base + (list.length > 1 ? ' ' + (i + 1) : '') + (h ? cz(h) : ''); });
+    list.forEach((b, i) => { const base = b.f ? (z0(b) ? 'Façade' : 'Latte') : h ? (b.o === 'h' ? 'Étagère' : 'Séparation') : (b.o === 'h' ? 'Planche' : 'Montant'); info[b.id].name = base + (list.length > 1 ? ' ' + (i + 1) : '') + (h ? cz(h) : ''); });
   }
   for (const b of D.boards) if (b.nm) info[b.id].name = b.nm;
   return info;
@@ -1993,7 +2027,7 @@ function draw() {
   drawGrid();
   drawBacks();
   if (tool === 'book') cx.globalAlpha = .5;
-  for (const b of [...D.boards].sort((a, c) => (!!c.f - !!a.f) || z0(a) - z0(c))) drawBoard(b, sel.has(b.id), null);
+  for (const b of [...D.boards].sort((a, c) => z0(a) - z0(c) || (!!c.f - !!a.f))) drawBoard(b, sel.has(b.id), null);
   cx.globalAlpha = 1; safe(drawBed, 'Lit'); cx.globalAlpha = 1;
   if (S().showBooks !== false) for (const k of D.books) safe(() => drawBookRow(k, selBook === k), 'Livres');
   cx.setLineDash([]); cx.globalAlpha = 1;
@@ -2391,7 +2425,7 @@ function cornerPts(bb) { const p = [toS(bb.x0, bb.y0), toS(bb.x1, bb.y0), toS(bb
 
 // ---------- Pointeurs ----------
 const pts = new Map(); let drag = null, pinch = null;
-function hitBoard(sx, sy) { const [wx, wy] = toW(sx, sy); const tol = 3 / Vw.s; let flat = null; for (let i = D.boards.length - 1; i >= 0; i--) { const r = rect(D.boards[i]); if (wx >= r.x0 - tol && wx <= r.x1 + tol && wy >= r.y0 - tol && wy <= r.y1 + tol) { if (!D.boards[i].f) return D.boards[i]; if (!flat || z0(D.boards[i]) > z0(flat)) flat = D.boards[i]; } } return flat; } // les lattes à plat passent derrière
+function hitBoard(sx, sy) { const [wx, wy] = toW(sx, sy); const tol = 3 / Vw.s; let best = null, bz = -1; const fz = b => z0(b) + zExt(b) + (b.f ? 0 : .1); for (let i = D.boards.length - 1; i >= 0; i--) { const b = D.boards[i], r = rect(b); if (wx >= r.x0 - tol && wx <= r.x1 + tol && wy >= r.y0 - tol && wy <= r.y1 + tol) { if (!isTdl()) return b; if (fz(b) > bz) { best = b; bz = fz(b); } } } return best; } // tête de lit : la planche la plus en avant
 function hitGuide(sx, sy, tol) { if (!vis('showGuides')) return null; for (const g of D.guides) { const [gx, gy] = toS(g.pos, g.pos); if (g.axis === 'h' && Math.abs(gy - sy) < tol) return g; if (g.axis === 'v' && Math.abs(gx - sx) < tol) return g; } return null; }
 const inTB = sy => sy < R || sy > H - R, inLR = sx => sx < R || sx > W - R;
 function hitMarker(sx, sy) { if (!vis('showGuides')) return null; for (const g of D.guides) { const [gx, gy] = toS(g.pos, g.pos); if (g.axis === 'v' && inTB(sy) && Math.abs(gx - sx) < 12) return g; if (g.axis === 'h' && inLR(sx) && Math.abs(gy - sy) < 12) return g; } return null; }
