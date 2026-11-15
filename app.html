@@ -3332,7 +3332,8 @@ async function open3D() {
   $('#v3dMsg').textContent = '';
   if (T3 && (T3.lost || (T3.r.getContext().isContextLost && T3.r.getContext().isContextLost()))) reset3();
   try { if (!T3) init3(); } catch (e) { $('#v3dMsg').textContent = 'La 3D n\'est pas disponible sur cet appareil.'; return; }
-  build3(); resize3(); setView3(V3.view || '34');
+  V3.wall = !!S().v3wall; // « accroché au mur » est retenu pour ce meuble
+  build3(); resize3(); setView3(V3.wall ? (S().v3view || 'face') : (V3.view || '34'));
 }
 // repart d'une 3D toute neuve (nouvelle toile) : après une perte de mémoire graphique, tout redevient normal (plus de meuble noir)
 function reset3() { try { T3 && T3.r.dispose(); } catch { } const o = $('#c3d'), n = o.cloneNode(false); o.replaceWith(n); T3 = null; }
@@ -3436,7 +3437,7 @@ function build3() {
   const fy = V3.wall ? Math.min(xb.y0, bb.y0 - (S().wallFloor || 0)) : xb.y0, wz = -1.5 - backE; // au mur : le sol descend à la vraie hauteur
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor); floor.rotation.x = -Math.PI / 2; floor.position.set((bb.x0 + bb.x1) / 2, fy - .5, 0); floor.receiveShadow = true; g.env.add(floor);
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.wall); wall.position.set((bb.x0 + bb.x1) / 2, fy + span / 2 - 1, wz); wall.receiveShadow = true; wall.userData.wall = true; g.env.add(wall);
-  if (V3.wall) wallMarks3(g.env, bb, fy, wz);
+  if (V3.wall && S().v3marks !== false) wallMarks3(g.env, bb, fy, wz);
   const eb = { ...xb }; if (V3.wall) eb.y0 = fy; if (vis('showObjs')) for (const o of D.objs.filter(o => Number.isFinite(o.x + o.y + o.h))) { eb.y1 = Math.max(eb.y1, o.y + o.h); eb.x0 = Math.min(eb.x0, o.x - objW(o) / 2); eb.x1 = Math.max(eb.x1, o.x + objW(o) / 2); }
   for (const k of ['x0', 'y0', 'x1', 'y1']) if (!Number.isFinite(eb[k])) eb[k] = bb[k]; // une valeur invalide ne doit jamais rendre la scène noire
   const c = [(eb.x0 + eb.x1) / 2, (eb.y0 + eb.y1) / 2, maxD / 2], size = Math.max(eb.x1 - eb.x0, eb.y1 - eb.y0, maxD);
@@ -3485,7 +3486,7 @@ function place3() {
   for (const o of T3.g.env.children) if (o.userData.wall) o.visible = cam.position.z > 0; // le mur disparaît quand on passe derrière
 }
 function setView3(v) {
-  V3.view = v; const P = { face: [0, .02], '34': [-.6, .32], side: [-1.5, .08], top: [0, 1.45] }[v];
+  V3.view = v; if (V3.wall && D.settings.v3view !== v) { D.settings.v3view = v; scheduleSave(); } const P = { face: [0, .02], '34': [-.6, .32], side: [-1.5, .08], top: [0, 1.45] }[v];
   V3.yaw = P[0]; V3.pitch = P[1]; V3.target = new THREE.Vector3(...V3.center);
   V3.dist = V3.size / (2 * Math.tan(T3.cam.fov * Math.PI / 360)) * (T3.cam.aspect < 1 ? 1.9 / T3.cam.aspect * .75 : 1.45);
   document.querySelectorAll('[data-v3]').forEach(b => b.classList.toggle('on', b.dataset.v3 === v)); render3();
@@ -3567,9 +3568,10 @@ function arSetupUI() {
 function panel3() {
   const p = $('#p3d'), j = V3.sel && jointList().find(x => x.key === V3.sel);
   if (!j) {
-    p.innerHTML = verChips() + `<div class="row" style="margin:0 0 6px;align-items:center"><button class="btn${V3.wall ? ' on' : ''}" id="v3Wall">🧱 Accroché au mur</button>${V3.wall ? `<label style="display:flex;align-items:center;gap:5px;font-size:13px">bas à <input id="v3Fl" inputmode="decimal" value="${fmt(S().wallFloor || 0)}" style="width:62px;font:15px inherit;padding:7px;border:1px solid var(--line);border-radius:8px"> cm du sol</label>` : ''}</div><div class="row" style="margin:0 0 6px"><button class="btn" id="v3Photo" style="flex:1">🖼 Incruster dans une photo</button></div><div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
+    p.innerHTML = verChips() + `<div class="row" style="margin:0 0 6px;align-items:center;flex-wrap:wrap"><button class="btn${V3.wall ? ' on' : ''}" id="v3Wall">🧱 Accroché au mur</button>${V3.wall ? `<button class="btn${S().v3marks !== false ? ' on' : ''}" id="v3Marks">📏 Cotes et repères</button>` : ''}${V3.wall ? `<label style="display:flex;align-items:center;gap:5px;font-size:13px">bas à <input id="v3Fl" inputmode="decimal" value="${fmt(S().wallFloor || 0)}" style="width:62px;font:15px inherit;padding:7px;border:1px solid var(--line);border-radius:8px"> cm du sol</label>` : ''}</div><div class="row" style="margin:0 0 6px"><button class="btn" id="v3Photo" style="flex:1">🖼 Incruster dans une photo</button></div><div id="arSlot"></div><div style="font-size:12px;color:var(--mute);margin-top:6px">Un doigt : tourner · deux doigts : zoomer et déplacer. ${V3.showScrews ? 'Touche une vis (ou une jonction) pour en ajouter ou en enlever.' : ''}${arBase() ? ' <a href="#" id="arEdit" style="color:var(--mute)">Adresse de la page</a>' : ''}</div>`;
     bindVerChips(p, () => { build3(); panel3(); });
-    $('#v3Wall').onclick = () => { V3.wall = !V3.wall; V3.target = null; build3(); setView3('face'); panel3(); if (V3.wall && !(S().wallFloor > 0)) toast('Indique à quelle hauteur du sol est le bas du meuble'); };
+    if ($('#v3Marks')) $('#v3Marks').onclick = () => { D.settings.v3marks = S().v3marks === false; scheduleSave(); build3(); render3(); panel3(); };
+    $('#v3Wall').onclick = () => { V3.wall = !V3.wall; D.settings.v3wall = V3.wall; scheduleSave(); V3.target = null; build3(); setView3(V3.wall ? (S().v3view || 'face') : '34'); panel3(); if (V3.wall && !(S().wallFloor > 0)) toast('Indique à quelle hauteur du sol est le bas du meuble'); };
     if ($('#v3Fl')) $('#v3Fl').onchange = () => { const v = parseCm($('#v3Fl').value); if (!Number.isFinite(v) || v < 0) return toast('Valeur non comprise'); D.settings.wallFloor = v; scheduleSave(); V3.target = null; build3(); setView3('face'); };
     $('#v3Photo').onclick = () => { close3D(); RM.wantFree = true; openRoom(); if (RM.img) { RM.free = RM.free || null; freeStart(); } };
     arLinkHtml().then(h => { const sl = $('#arSlot'); if (!sl) return; sl.innerHTML = h; if ($('#arSetup')) $('#arSetup').onclick = arSetupUI; if ($('#arGo')) $('#arGo').onclick = () => { scheduleSave(); try { sessionStorage.setItem('atelier.resume', D.id); sessionStorage.setItem('atelier.resume3d', '1'); } catch { } }; });
