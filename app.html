@@ -364,16 +364,44 @@ function closeDialog(a, whole) {
     if (!st.front && !st.fond) return toast('Choisis la façade, le fond, ou les deux');
     pushUndo(); let n = 0;
     if (st.front) {
-      const zf = Math.max(...ids.map(b => z0(b) + zExt(b))), lw = lwOf(), blk = uid(), Sz = st.dir === 'h' ? H : W; n = Math.max(1, Math.ceil(Sz / lw - .001)); let p0 = st.dir === 'h' ? o.y0 : o.x0;
-      for (let i = 0; i < n; i++) {
-        const w = st.dir === 'h' ? (i === 0 ? Sz - (n - 1) * lw : lw) : (i === n - 1 ? Sz - (n - 1) * lw : lw); // la planche refendue en bas (cachée par le lit) ou à droite
-        const b = st.dir === 'h' ? addBoard('h', o.x0, p0, W, t()) : addBoard('v', p0, o.y0, H, t());
-        b.f = true; b.d = Math.round(w); b.z = zf; if (st.mat !== 'pin') b.mat = st.mat; b.blk = blk; b.fc = aKey(a); p0 += w;
-      }
+      const b = addBoard(st.dir, o.x0, o.y0, st.dir === 'h' ? W : H, t()); b.f = true; b.d = lwOf(); if (st.mat !== 'pin') b.mat = st.mat; b.blk = uid();
+      const list = [b]; layFacade(list, a); n = list.length;
     }
     if (st.fond && !parts('dos').some(p => sameA(p.a, a))) D.parts.push({ id: uid(), k: 'dos', a: { ...a }, mat: 'cp', ep: 5 });
     closeModal(); setTool('sel'); changed(); toast(st.front ? `🧱 Zone fermée : ${n} planche${n > 1 ? 's' : ''} de façade${st.fond ? ' + fond' : ''}` : 'Fond posé');
   };
+}
+
+// pose (ou recale) des planches à plat pour couvrir exactement une zone : même nombre de planches si possible, la refendue en bas / à droite
+function layFacade(list, a) {
+  const ids = [a.l, a.r, a.b, a.t].map(byId); if (ids.some(x => !x) || !list.length) return;
+  const o = outerRect(a), zf = Math.max(...ids.map(b => z0(b) + zExt(b))), H = list[0].o === 'h', Sz = H ? o.y1 - o.y0 : o.x1 - o.x0, Lz = H ? o.x1 - o.x0 : o.y1 - o.y0;
+  const lw = Math.max(...list.map(b => b.d || S().d)), n = Math.max(1, Math.ceil(Sz / lw - .001)), proto = list[0];
+  list.sort((p, q) => H ? p.y - q.y : p.x - q.x);
+  while (list.length > n) { const x = list.pop(); D.boards = D.boards.filter(b => b !== x); }
+  while (list.length < n) { const b = { ...proto, id: uid() }; D.boards.push(b); list.push(b); }
+  let p0 = H ? o.y0 : o.x0; const k = aKey(a);
+  list.forEach((b, i) => {
+    const w = H ? (i === 0 ? Sz - (n - 1) * lw : lw) : (i === n - 1 ? Sz - (n - 1) * lw : lw);
+    Object.assign(b, { o: proto.o, f: true, x: H ? o.x0 : p0, y: H ? p0 : o.y0, L: Lz, d: Math.round(w), z: zf, fc: k, fz: [o.x0, o.y0, o.x1, o.y1, zf], blk: proto.blk || (proto.blk = uid()) });
+    p0 += w;
+  });
+}
+function refitFacades() { // une façade suit sa zone quand on bouge ou redimensionne le meuble
+  if (!isTdl()) return; const G = new Map();
+  for (const b of D.boards) if (b.fc) { if (!G.has(b.fc)) G.set(b.fc, []); G.get(b.fc).push(b); }
+  for (const [k, list] of G) {
+    const [l, r, bo, t] = k.split('|'), a = { l, r, b: bo, t };
+    if (![l, r, bo, t].every(byId)) { for (const b of list) { delete b.fc; delete b.fz; } continue; }
+    const o = outerRect(a), zf = Math.max(...[l, r, bo, t].map(id => z0(byId(id)) + zExt(byId(id)))), f = list[0].fz || [];
+    if ([o.x0, o.y0, o.x1, o.y1, zf].some((v, i) => Math.abs(v - (f[i] ?? 1e9)) > .5)) layFacade(list, a);
+  }
+}
+function snapFacade(list) { // « Caler pile sur le meuble » : retrouve la zone derrière les planches et les recale dessus
+  const grp = list[0].blk ? D.boards.filter(b => b.f && b.blk === list[0].blk) : list.filter(b => b.f);
+  const bb = bbox(grp), cx_ = (bb.x0 + bb.x1) / 2, cy_ = (bb.y0 + bb.y1) / 2, a = cellAt(cx_, cy_) || frameAnchors(cx_, cy_);
+  if (!a) return toast('Pas de meuble derrière : pose les planches devant une zone entourée de 4 planches');
+  pushUndo(); for (const b of grp) delete b.fz; layFacade(grp, a); changed(); toast(`🎯 ${grp.length} planche${grp.length > 1 ? 's' : ''} calée${grp.length > 1 ? 's' : ''} pile sur le meuble`);
 }
 function closeHelp() {
   const P = $('#panel'); P.style.display = 'block';
@@ -440,6 +468,7 @@ function tdlHtml(list) {
   return `<div style="margin-top:8px;padding:8px;border-radius:9px;background:#f3ece1">
     <div class="row" style="margin:0;align-items:center"><span style="font-size:12px;font-weight:700;min-width:46px">Bois</span><div class="seg">${Object.entries(MATS).map(([k, mm]) => `<button data-tm="${k}" class="${m === k ? 'on' : ''}">${mm.n}</button>`).join('')}</div></div>
     <div class="row" style="margin:6px 0 0;align-items:center"><span style="font-size:12px;font-weight:700;min-width:46px">Pose</span><div class="seg"><button data-tf="0" class="${fl === '0' ? 'on' : ''}">▯ De chant</button><button data-tf="1" class="${fl === '1' ? 'on' : ''}">▤ À plat</button></div></div>
+    ${fl === '1' ? `<div class="row" style="margin:6px 0 0"><button class="btn pri" id="tdlSnap">🎯 Caler pile sur le meuble</button></div>${list.some(b => b.fc) ? '<div style="font-size:11px;color:var(--mute)">Façade liée au meuble : elle suit s\'il change de taille.</div>' : ''}` : ''}
     <div class="grid2" style="margin-top:6px"><label class="f">Décollée du mur (cm)<input data-tz ${KPATTR} value="${z == null ? '' : fmt(z)}" placeholder="—"></label><span style="font-size:11px;color:var(--mute);align-self:end">${fl === '1' ? 'À plat : on voit sa face (latte). Sa largeur devient sa hauteur.' : fl === '0' ? 'De chant : part du mur vers la pièce, comme une étagère.' : ''}</span></div>
   </div>`;
 }
@@ -447,6 +476,7 @@ function tdlBind(p, list) {
   if (!isTdl()) return;
   p.querySelectorAll('[data-tm]').forEach(x => x.onclick = () => { pushUndo(); for (const b of list) { if (x.dataset.tm === 'pin') delete b.mat; else b.mat = x.dataset.tm; } changed(); });
   p.querySelectorAll('[data-tf]').forEach(x => x.onclick = () => { pushUndo(); for (const b of list) { if (x.dataset.tf === '1') b.f = true; else delete b.f; } changed(); });
+  const sn = p.querySelector('#tdlSnap'); if (sn) sn.onclick = () => snapFacade(list);
   const iz = p.querySelector('[data-tz]'); if (iz) iz.onchange = () => { const v = parseCm(iz.value); if (!Number.isFinite(v) || v < 0) return toast('Valeur non comprise'); pushUndo(); for (const b of list) { if (v) b.z = v; else delete b.z; } changed(); };
 }
 
@@ -2975,7 +3005,7 @@ function decorateLock(p) {
     const n = document.createElement('div'); n.style.cssText = 'font-size:12px;color:var(--mute);margin:-2px 0 8px'; n.textContent = 'Verrouillé : rien ne bouge. Touche 🔒 pour modifier.'; h3.after(n);
   }
 }
-function changed(save = true) { if (save && D.parts && D.parts.length) D.parts = D.parts.filter(partValid); renderPanel(); draw(); if (save) scheduleSave(); safe(pipSchedule, 'Aperçu 3D'); }
+function changed(save = true) { if (save) safe(refitFacades, 'Façades'); if (save && D.parts && D.parts.length) D.parts = D.parts.filter(partValid); renderPanel(); draw(); if (save) scheduleSave(); safe(pipSchedule, 'Aperçu 3D'); }
 
 // ---------- Fenêtres ----------
 // bouton « retour » d'Android : ferme la fenêtre ouverte (débit, pièce, 3D) au lieu de quitter l'app
