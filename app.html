@@ -176,11 +176,193 @@ const undoS = [], redoS = [];
 
 const S = () => D.settings;
 const vis = k => D.settings[k] !== false; // showGaps (cotes), showGuides (règles), showBooks (livres), showCross (croix)
-const bw = b => b.o === 'h' ? b.L : b.t;
-const bh = b => b.o === 'h' ? b.t : b.L;
+const bw = b => b.o === 'h' ? b.L : (b.f ? depth(b) : b.t); // b.f : planche posée à plat contre le mur (mode tête de lit)
+const bh = b => b.o === 'h' ? (b.f ? depth(b) : b.t) : b.L;
 const rect = b => ({ x0: b.x, y0: b.y, x1: b.x + bw(b), y1: b.y + bh(b) });
 const depth = b => b.d || S().d;
 const byId = id => D.boards.find(b => b.id === id);
+// ---------- 🛏 Mode tête de lit : lit, relief (planches décollées du mur ou à plat), chêne / pin, chevets ----------
+const isTdl = () => D.mode === 'tdl';
+const SB = () => D.boards.filter(b => !b.f); // planches « de chant » (les lattes à plat contre le mur ne font ni cases, ni jonctions)
+const zExt = b => b.f ? b.t : depth(b); // épaisseur dans le sens mur → pièce
+const z0 = b => b.z || 0;
+const MATS = { pin: { n: 'Pin', fill: '#e0b47c', sel: '#f4c48c', flat: '#ebc896', c3: null }, chene: { n: 'Chêne', fill: '#c49a66', sel: '#d9b07c', flat: '#cfa874', c3: 0xb8875a, hex: '#b98a5c' } };
+const matOf = b => MATS[b.mat] ? b.mat : 'pin';
+const BED_W = [900, 1400, 1600, 1800, 2000];
+function bedDefault() { const bb = D.boards.length ? bbox() : null; const W = 1800; return { W, L: 2000, hs: 550, hm: 200, x: bb ? Math.round((bb.x0 + bb.x1) / 2 - W / 2) : 0 }; }
+function bedGeom() { const B = D.bed; if (!B) return null; return { x0: B.x, x1: B.x + B.W, top: B.hs, mat: B.hs - B.hm, L: B.L }; }
+function bedZ() { // le lit se colle devant ce qui dépasse le plus du mur derrière lui
+  const g = bedGeom(); if (!g) return 0; let z = 0;
+  for (const b of D.boards) { const r = rect(b); if (r.x1 > g.x0 && r.x0 < g.x1 && r.y0 < g.top) z = Math.max(z, z0(b) + zExt(b)); }
+  return z;
+}
+function drawBed() {
+  if (!isTdl()) return;
+  // le sol
+  const [, sy] = toS(0, 0); cx.strokeStyle = '#8a7a66'; cx.lineWidth = 1.5; cx.setLineDash([]); cx.beginPath(); cx.moveTo(0, sy); cx.lineTo(W, sy); cx.stroke();
+  cx.font = '600 11px -apple-system,Segoe UI,sans-serif'; cx.fillStyle = '#8a7a66'; cx.textAlign = 'left'; cx.textBaseline = 'top'; cx.fillText('Sol', R + 6, sy + 3);
+  const g = bedGeom(); if (!g || S().showBed === false) return;
+  const [ax, ay] = toS(g.x0, g.top), [bx, by] = toS(g.x1, 0), [, my] = toS(0, g.mat), w = bx - ax;
+  cx.globalAlpha = .72; cx.fillStyle = '#c9cbcf'; cx.fillRect(ax, my, w, by - my); cx.fillStyle = '#fbfaf6'; cx.fillRect(ax, ay, w, my - ay); cx.globalAlpha = 1;
+  cx.strokeStyle = '#6f7378'; cx.lineWidth = 1.2; cx.setLineDash([6, 4]); cx.strokeRect(ax + .5, ay + .5, w - 1, by - ay - 1); cx.beginPath(); cx.moveTo(ax, my); cx.lineTo(bx, my); cx.stroke(); cx.setLineDash([]);
+  cx.font = '700 12px -apple-system,Segoe UI,sans-serif'; cx.fillStyle = '#4b4f55'; cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  if (w > 60) cx.fillText(`Lit ${fmt(D.bed.W)} × ${fmt(D.bed.L)} · matelas à ${fmt(D.bed.hs)} cm`, ax + w / 2, (ay + my) / 2);
+}
+function bed3(g) { // lit en 3D : sommier, matelas, oreillers
+  const B = bedGeom(); if (!isTdl() || !B || S().showBed === false) return;
+  const zb = bedZ() + 5, M = (c, r = .9) => new THREE.MeshStandardMaterial({ color: c, roughness: r });
+  const add = (x0, y0, zA, x1, y1, zB, m) => { const ms = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, zB - zA), m); ms.position.set((x0 + x1) / 2, (y0 + y1) / 2, (zA + zB) / 2); ms.castShadow = ms.receiveShadow = true; g.add(ms); };
+  add(B.x0, 0, zb, B.x1, B.mat, zb + B.L, M(0x9a9ca1));
+  add(B.x0 + 5, B.mat, zb + 5, B.x1 - 5, B.top, zb + B.L - 5, M(0xf3efe6));
+  const pw = Math.min(700, (D.bed.W - 120) / 2); for (const px of [B.x0 + 40, B.x1 - 40 - pw]) add(px, B.top, zb + 40, px + pw, B.top + 110, zb + 420, M(0xffffff, .95));
+  add(B.x0 - 10, B.top - 20, zb + B.L * .45, B.x1 + 10, B.top + 40, zb + B.L + 10, M(0xd9d2c3));
+}
+function bedBoxes() { // pour la caméra
+  const B = bedGeom(); if (!isTdl() || !B || S().showBed === false) return []; const zb = bedZ() + 5;
+  return [[B.x0, 0, zb, B.x1, B.mat, zb + B.L, '#9a9ca1', 'box'], [B.x0 + 5, B.mat, zb + 5, B.x1 - 5, B.top, zb + B.L - 5, '#f3efe6', 'box']];
+}
+function bedDialog() {
+  if (!D.bed) { pushUndo(); D.bed = bedDefault(); changed(); }
+  const B = D.bed, sb = D.boards.length ? bbox() : null;
+  openModal(`<h2>🛏 Le lit<button class="btn" data-close>✕</button></h2>
+    <div style="font-size:13px;color:var(--mute);line-height:1.45">Le lit est posé au sol, contre la tête de lit. Il sert de repère : il n'est ni découpé ni compté.</div>
+    <div style="font-size:12px;font-weight:700;margin:10px 0 3px">Largeur du matelas</div>
+    <div class="seg" style="flex-wrap:wrap">${BED_W.map(w => `<button data-bw="${w}" class="${B.W === w ? 'on' : ''}">${w / 10}</button>`).join('')}</div>
+    <div class="grid2" style="margin-top:8px">${field('Largeur (cm)', 'W', B.W)}${field('Longueur (cm)', 'L', B.L)}${field('Dessus du matelas, depuis le sol (cm)', 'hs', B.hs)}${field('Épaisseur du matelas (cm)', 'hm', B.hm)}${field('Bord gauche du lit (cm)', 'x', B.x)}</div>
+    <div class="row">${sb ? '<button class="btn pri" id="bdC">⊙ Centrer sous la tête de lit</button>' : ''}<button class="btn" id="bdH">${S().showBed === false ? '👁 Afficher le lit' : '🙈 Cacher le lit'}</button><button class="btn danger" id="bdDel">Retirer le lit</button></div>`);
+  const box = $('#mbox'), re = () => { changed(); bedDialog(); };
+  box.querySelectorAll('[data-bw]').forEach(x => x.onclick = () => { pushUndo(); const c = B.x + B.W / 2; B.W = +x.dataset.bw; B.x = Math.round(c - B.W / 2); re(); });
+  box.querySelectorAll('input[data-k]').forEach(inp => inp.onchange = () => { const v = parseCm(inp.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); pushUndo(); B[inp.dataset.k] = Math.round(v); B.hm = Math.min(B.hm, B.hs); re(); });
+  if ($('#bdC')) $('#bdC').onclick = () => { pushUndo(); const bb = bbox(); B.x = Math.round((bb.x0 + bb.x1) / 2 - B.W / 2); re(); };
+  $('#bdH').onclick = () => { S().showBed = S().showBed === false; scheduleSave(); re(); };
+  $('#bdDel').onclick = () => { pushUndo(); D.bed = null; changed(); closeModal(); };
+}
+// caisson ouvert (niche) posé où on veut, décollé du mur de z
+function boxAt(x, y, w, h, d, z, mat) {
+  const t = mat === 'chene' ? 20 : S().t, g = uid(), out = [];
+  const mk = (o, X, Y, L) => { const b = addBoard(o, X, Y, L, t); b.d = d; if (z) b.z = z; if (mat !== 'pin') b.mat = mat; b.g = g; out.push(b); return b; };
+  mk('h', x, y, w); mk('h', x, y + h - t, w); mk('v', x, y + t, h - 2 * t); mk('v', x + w - t, y + t, h - 2 * t);
+  return out;
+}
+const flatFront = (x0, x1, y0, y1) => { let z = 0; for (const b of D.boards) { if (!b.f) continue; const r = rect(b); if (r.x1 > x0 && r.x0 < x1 && r.y1 > y0 && r.y0 < y1) z = Math.max(z, z0(b) + b.t); } return z; };
+function chevetsDialog() {
+  if (!D.bed) { D.bed = bedDefault(); }
+  const st = LS.get('atelier.chevet') || { w: 450, h: 250, d: 200, gap: 50, mat: 'pin' };
+  openModal(`<h2>🗄 Chevets intégrés<button class="btn" data-close>✕</button></h2>
+    <div style="font-size:13px;color:var(--mute);line-height:1.45">Deux niches suspendues, une de chaque côté du lit, avec le dessus à la hauteur du matelas. Elles se posent devant les lattes à plat s'il y en a.</div>
+    <div class="grid2" style="margin-top:8px">${field('Largeur (cm)', 'w', st.w)}${field('Hauteur (cm)', 'h', st.h)}${field('Profondeur (cm)', 'd', st.d)}${field('Écart avec le lit (cm)', 'gap', st.gap)}</div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Bois</div><div class="seg">${Object.entries(MATS).map(([k, m]) => `<button data-cm="${k}" class="${st.mat === k ? 'on' : ''}">${m.n}</button>`).join('')}</div>
+    <div class="row"><button class="btn pri" id="chOk">Poser les 2 chevets</button></div>`);
+  const box = $('#mbox');
+  box.querySelectorAll('input[data-k]').forEach(inp => inp.onchange = () => { const v = parseCm(inp.value); if (Number.isFinite(v) && v > 0) { st[inp.dataset.k] = Math.round(v); LS.set('atelier.chevet', st); } });
+  box.querySelectorAll('[data-cm]').forEach(x => x.onclick = () => { st.mat = x.dataset.cm; LS.set('atelier.chevet', st); chevetsDialog(); });
+  $('#chOk').onclick = () => {
+    pushUndo(); const B = bedGeom(), y = B.top - st.h;
+    for (const x of [B.x0 - st.gap - st.w, B.x1 + st.gap]) boxAt(x, y, st.w, st.h, st.d, flatFront(x, x + st.w, y, y + st.h), st.mat);
+    closeModal(); changed(); toast('2 chevets posés : glisse-les ou change leurs cotes');
+  };
+}
+function slatsDialog() {
+  const sb = SB().length || D.boards.length ? bbox() : null, B = bedGeom();
+  const st = { n: 6, w: 150, gap: 10, L: B ? D.bed.W + 1200 : 2800, y: B ? Math.max(0, B.mat) : 300, z: 0, mat: 'chene', t: 20, dir: 'h', ...(LS.get('atelier.slats') || {}) };
+  if (B) st.x = Math.round((B.x0 + B.x1) / 2 - st.L / 2); else st.x = sb ? sb.x0 : 0;
+  openModal(`<h2>▤ Lattes à plat contre le mur<button class="btn" data-close>✕</button></h2>
+    <div style="font-size:13px;color:var(--mute);line-height:1.45">Des planches posées à plat (on voit leur face), pour faire le panneau de la tête de lit. Tu pourras ensuite décoller certaines lattes du mur pour faire du relief.</div>
+    <div class="seg" style="margin-top:8px"><button data-sd="h" class="${st.dir === 'h' ? 'on' : ''}">━ Horizontales</button><button data-sd="v" class="${st.dir === 'v' ? 'on' : ''}">┃ Verticales</button></div>
+    <div class="grid2" style="margin-top:8px"><label class="f">Nombre de lattes<input data-k="n" ${KPATTR} value="${st.n}"></label>${field('Largeur d\'une latte (cm)', 'w', st.w)}${field('Espace entre lattes (cm)', 'gap', st.gap)}${field(st.dir === 'h' ? 'Longueur (cm)' : 'Hauteur (cm)', 'L', st.L)}${field('Bord gauche (cm)', 'x', st.x)}${field('Bas, depuis le sol (cm)', 'y', st.y)}${field('Épaisseur (cm)', 't', st.t)}${field('Décollées du mur (cm)', 'z', st.z)}</div>
+    <div style="font-size:12px;font-weight:700;margin:8px 0 3px">Bois</div><div class="seg">${Object.entries(MATS).map(([k, m]) => `<button data-cm="${k}" class="${st.mat === k ? 'on' : ''}">${m.n}</button>`).join('')}</div>
+    <div class="row"><button class="btn pri" id="slOk">Poser les lattes</button></div>`);
+  const box = $('#mbox'), keep = () => LS.set('atelier.slats', { n: st.n, w: st.w, gap: st.gap, L: st.L, z: st.z, mat: st.mat, t: st.t, dir: st.dir });
+  box.querySelectorAll('input[data-k]').forEach(inp => inp.onchange = () => { const v = parseCm(inp.value), k = inp.dataset.k; if (!Number.isFinite(v)) return toast('Valeur non comprise'); st[k] = k === 'n' ? Math.max(1, Math.round(v / 10)) : Math.round(v); keep(); });
+  box.querySelectorAll('[data-cm]').forEach(x => x.onclick = () => { st.mat = x.dataset.cm; if (st.mat === 'chene' && st.t === 18) st.t = 20; keep(); slatsDialog(); });
+  box.querySelectorAll('[data-sd]').forEach(x => x.onclick = () => { st.dir = x.dataset.sd; keep(); slatsDialog(); });
+  $('#slOk').onclick = () => {
+    pushUndo(); const blk = uid();
+    for (let i = 0; i < st.n; i++) {
+      const b = st.dir === 'h' ? addBoard('h', st.x, st.y + i * (st.w + st.gap), st.L, st.t) : addBoard('v', st.x + i * (st.w + st.gap), st.y, st.L, st.t);
+      b.f = true; b.d = st.w; if (st.z) b.z = st.z; if (st.mat !== 'pin') b.mat = st.mat; b.blk = blk;
+    }
+    closeModal(); changed(); toast(`${st.n} lattes posées (assemblées en bloc)`);
+  };
+}
+function tdlExample() {
+  if (D.boards.length) return toast('L\'exemple se pose sur une tête de lit vide');
+  pushUndo(); D.bed = { W: 1800, L: 2000, hs: 550, hm: 200, x: 500 };
+  const blk = uid(), L = 2000, x = 400;
+  for (let i = 0; i < 6; i++) { const b = addBoard('h', x, 350 + i * 160, L, 20); b.f = true; b.d = 150; b.mat = 'chene'; b.blk = blk; }
+  const top = addBoard('h', x, 350 + 6 * 160, L, 20); top.d = 150; top.mat = 'chene'; // tablette sur le dessus, en saillie
+  for (const cxh of [0, 2350]) boxAt(cxh, 300, 450, 250, 200, 0, 'chene');
+  changed(); fitView(); toast('Exemple posé : lattes en chêne, tablette en relief et 2 chevets');
+}
+const TDL_BUILD = [['tdlBed', '🛏', 'Le lit'], ['tdlSlats', '▤', 'Lattes à plat'], ['tdlChevets', '🗄', 'Chevets'], ['tdlEx', '✨', 'Exemple']];
+const TDL_ACT = { tdlBed: () => bedDialog(), tdlSlats: () => slatsDialog(), tdlChevets: () => chevetsDialog(), tdlEx: () => tdlExample() };
+function newTdl() { const d = newDesign(); d.mode = 'tdl'; d.name = 'Tête de lit'; d.bed = { W: 1800, L: 2000, hs: 550, hm: 200, x: 0 }; d.settings.v3wall = true; d.settings.v3view = '34'; return d; }
+// ---- planches du magasin (largeurs et longueurs selon le magasin), par bois et épaisseur ----
+const STORE_DEF = [{ mat: 'pin', t: 18, W: 200, L: 2000 }, { mat: 'chene', t: 20, W: 150, L: 2000 }, { mat: 'chene', t: 20, W: 200, L: 2000 }];
+const store = () => LS.get('atelier.store') || STORE_DEF;
+function stockFor(mat, t, d, maxL = 0) { // la planche du magasin la plus étroite qui suffit, assez longue si possible
+  const L = store().filter(s => s.mat === mat && Math.abs(s.t - t) < .6 && s.W >= d - .5).sort((a, b) => a.W - b.W || (b.L >= maxL) - (a.L >= maxL) || (a.L >= maxL ? a.L - b.L : b.L - a.L));
+  return L[0] || null;
+}
+function storeDialog(back) {
+  const st = store();
+  openModal(`<h2>🏪 Planches de ton magasin<button class="btn" data-close>✕</button></h2>
+    <div style="font-size:13px;color:var(--mute);line-height:1.45">Les tailles que ton magasin vend. Le débit choisit pour chaque pièce la planche la plus étroite qui suffit (à refendre si besoin) et la longueur à acheter.</div>
+    <table style="margin-top:8px"><tr><th>Bois</th><th>Ép. (mm)</th><th>Larg. (cm)</th><th>Long. (cm)</th><th></th></tr>${st.map((s, i) => `<tr><td><select data-si="${i}" data-sk="mat">${Object.entries(MATS).map(([k, m]) => `<option value="${k}" ${s.mat === k ? 'selected' : ''}>${m.n}</option>`).join('')}</select></td><td><input data-si="${i}" data-sk="t" value="${s.t}" ${KPATTR} style="width:52px"></td><td><input data-si="${i}" data-sk="W" value="${fmt(s.W)}" ${KPATTR} style="width:56px"></td><td><input data-si="${i}" data-sk="L" value="${fmt(s.L)}" ${KPATTR} style="width:60px"></td><td><button class="btn danger" data-sdel="${i}">🗑</button></td></tr>`).join('')}</table>
+    <div class="row"><button class="btn" id="stAdd">＋ Ajouter une taille</button><button class="btn pri" id="stOk">OK</button></div>`);
+  const box = $('#mbox'), save = a => LS.set('atelier.store', a);
+  box.querySelectorAll('[data-si]').forEach(inp => inp.onchange = () => { const a = store(), s = a[+inp.dataset.si], k = inp.dataset.sk; if (k === 'mat') s.mat = inp.value; else { const v = k === 't' ? +String(inp.value).replace(',', '.') : parseCm(inp.value); if (!(v > 0)) return toast('Valeur non comprise'); s[k] = v; } save(a); });
+  box.querySelectorAll('[data-sdel]').forEach(x => x.onclick = () => { const a = store(); a.splice(+x.dataset.sdel, 1); save(a); storeDialog(back); });
+  $('#stAdd').onclick = () => { const a = store(); a.push({ mat: 'chene', t: 20, W: 200, L: 2000 }); save(a); storeDialog(back); };
+  $('#stOk').onclick = () => back ? back() : closeModal();
+}
+// ---- aperçu 3D en direct, dans un coin du plan (mode tête de lit) ----
+const PIP = { view: '34', t: 0 }; const pipOn = () => S().showPip !== false;
+function pipSchedule() { if (!isTdl() || !pipOn() || v3Open()) { const e = $('#pip3'); if (e) e.style.display = isTdl() && pipOn() && !v3Open() && D.boards.length ? 'block' : 'none'; return; } clearTimeout(PIP.t); PIP.t = setTimeout(pipRender, 350); }
+async function pipRender() {
+  let wrap = $('#pip3');
+  if (!wrap) {
+    wrap = document.createElement('div'); wrap.id = 'pip3';
+    wrap.style.cssText = 'position:absolute;right:40px;top:40px;width:min(42vw,320px);aspect-ratio:4/3;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#e8e0d2;box-shadow:0 4px 14px rgba(0,0,0,.15)';
+    wrap.innerHTML = `<canvas style="width:100%;height:100%;display:block"></canvas><div style="position:absolute;left:3px;right:3px;bottom:3px;display:flex;gap:2px">${[['face', 'Face'], ['side', 'Côté'], ['34', 'Iso'], ['top', 'Dessus']].map(([k, l]) => `<button data-pv="${k}" style="flex:1;min-width:0;font:600 10px -apple-system,Segoe UI,sans-serif;padding:4px 0;border-radius:6px;border:1px solid #0002;background:#fffdf8">${l}</button>`).join('')}</div><div style="position:absolute;right:3px;top:3px;display:flex;gap:3px"><button id="pipBig" title="Grande 3D" style="font:600 12px -apple-system,sans-serif;padding:3px 7px;border-radius:6px;border:1px solid #0002;background:#fffdf8">⤢</button><button id="pipX" title="Masquer" style="font:600 12px -apple-system,sans-serif;padding:3px 7px;border-radius:6px;border:1px solid #0002;background:#fffdf8">✕</button></div><div style="position:absolute;left:6px;top:5px;font:700 10px -apple-system,sans-serif;color:#5b4a36;background:#fffdf8cc;border-radius:5px;padding:2px 5px">3D en direct</div>`;
+    $('#panel').before(wrap); // sous la fiche : la fiche passe toujours devant
+    wrap.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { PIP.view = b.dataset.pv; pipRender(); });
+    wrap.querySelector('#pipBig').onclick = () => { S().v3view = PIP.view; S().v3wall = true; open3D(); };
+    wrap.querySelector('#pipX').onclick = () => { S().showPip = false; scheduleSave(); wrap.style.display = 'none'; updateEye(); toast('Aperçu 3D masqué · 👁 pour le remettre'); };
+  }
+  if (!isTdl() || !pipOn() || !D.boards.length || v3Open()) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block'; wrap.querySelectorAll('[data-pv]').forEach(b => { const on = b.dataset.pv === PIP.view; b.style.background = on ? '#1f1a14' : '#fffdf8'; b.style.color = on ? '#fff' : '#1f1a14'; });
+  try { await load3(); } catch { return; }
+  if (T3 && (T3.lost || T3.r.getContext().isContextLost?.())) reset3();
+  if (!T3) { try { init3(); } catch { return; } }
+  const cvp = wrap.querySelector('canvas'), r = cvp.getBoundingClientRect(), dpr = Math.min(2, devicePixelRatio || 1), Wp = Math.max(40, Math.round(r.width * dpr)), Hp = Math.max(30, Math.round(r.height * dpr));
+  const keep = { yaw: V3.yaw, pitch: V3.pitch, dist: V3.dist, target: V3.target, view: V3.view, wall: V3.wall, aspect: T3.cam.aspect };
+  V3.wall = true; build3();
+  T3.r.setSize(r.width, r.height, false); T3.cam.aspect = Wp / Hp; T3.cam.updateProjectionMatrix();
+  const P = { face: [0, .02], '34': [-.6, .32], side: [-1.5, .08], top: [0, 1.45] }[PIP.view];
+  V3.yaw = P[0]; V3.pitch = P[1]; V3.target = new THREE.Vector3(...V3.center); V3.dist = V3.size / (2 * Math.tan(T3.cam.fov * Math.PI / 360)) * 1.35;
+  place3(); T3.r.render(T3.scene, T3.cam);
+  cvp.width = Wp; cvp.height = Hp; cvp.getContext('2d').drawImage(T3.r.domElement, 0, 0, Wp, Hp);
+  Object.assign(V3, { yaw: keep.yaw, pitch: keep.pitch, dist: keep.dist, target: keep.target || new THREE.Vector3(...V3.center), view: keep.view, wall: keep.wall }); T3.cam.aspect = keep.aspect; T3.cam.updateProjectionMatrix();
+}
+
+// ---- fiche planche : bois, décalage du mur, à plat / de chant ----
+function tdlHtml(list) {
+  if (!isTdl() || !list.length) return '';
+  const m = list.every(b => matOf(b) === matOf(list[0])) ? matOf(list[0]) : '', z = list.every(b => z0(b) === z0(list[0])) ? z0(list[0]) : null;
+  const fl = list.every(b => !!b.f === !!list[0].f) ? (list[0].f ? '1' : '0') : '';
+  return `<div style="margin-top:8px;padding:8px;border-radius:9px;background:#f3ece1">
+    <div class="row" style="margin:0;align-items:center"><span style="font-size:12px;font-weight:700;min-width:46px">Bois</span><div class="seg">${Object.entries(MATS).map(([k, mm]) => `<button data-tm="${k}" class="${m === k ? 'on' : ''}">${mm.n}</button>`).join('')}</div></div>
+    <div class="row" style="margin:6px 0 0;align-items:center"><span style="font-size:12px;font-weight:700;min-width:46px">Pose</span><div class="seg"><button data-tf="0" class="${fl === '0' ? 'on' : ''}">▯ De chant</button><button data-tf="1" class="${fl === '1' ? 'on' : ''}">▤ À plat</button></div></div>
+    <div class="grid2" style="margin-top:6px"><label class="f">Décollée du mur (cm)<input data-tz ${KPATTR} value="${z == null ? '' : fmt(z)}" placeholder="—"></label><span style="font-size:11px;color:var(--mute);align-self:end">${fl === '1' ? 'À plat : on voit sa face (latte). Sa largeur devient sa hauteur.' : fl === '0' ? 'De chant : part du mur vers la pièce, comme une étagère.' : ''}</span></div>
+  </div>`;
+}
+function tdlBind(p, list) {
+  if (!isTdl()) return;
+  p.querySelectorAll('[data-tm]').forEach(x => x.onclick = () => { pushUndo(); for (const b of list) { if (x.dataset.tm === 'pin') delete b.mat; else b.mat = x.dataset.tm; } changed(); });
+  p.querySelectorAll('[data-tf]').forEach(x => x.onclick = () => { pushUndo(); for (const b of list) { if (x.dataset.tf === '1') b.f = true; else delete b.f; } changed(); });
+  const iz = p.querySelector('[data-tz]'); if (iz) iz.onchange = () => { const v = parseCm(iz.value); if (!Number.isFinite(v) || v < 0) return toast('Valeur non comprise'); pushUndo(); for (const b of list) { if (v) b.z = v; else delete b.z; } changed(); };
+}
 
 function fmt(mm) { return (Math.round(mm) / 10).toFixed(1).replace('.', ','); }
 function parseCm(str) {
@@ -188,12 +370,12 @@ function parseCm(str) {
   if (!/^[0-9.+\-*/()]+$/.test(s)) return NaN;
   try { const v = Function('"use strict";return(' + s + ')')(); return Number.isFinite(v) ? Math.round(v * 10) : NaN; } catch { return NaN; }
 }
-function snapshot() { return JSON.stringify({ boards: D.boards, guides: D.guides, books: D.books, dims: D.dims, cdims: D.cdims, objs: D.objs, screws: D.screws, brackets: D.brackets || {}, parts: D.parts || [], settings: D.settings }); }
+function snapshot() { return JSON.stringify({ boards: D.boards, guides: D.guides, books: D.books, dims: D.dims, cdims: D.cdims, objs: D.objs, screws: D.screws, brackets: D.brackets || {}, parts: D.parts || [], bed: D.bed || null, settings: D.settings }); }
 const HMAX = 300; let histT = null;
 function saveHist() { clearTimeout(histT); const id = D.id; histT = setTimeout(() => { for (const n of [120, 60, 25]) { try { localStorage.setItem('atelier.hist.' + id, JSON.stringify({ u: undoS.slice(-n), r: redoS.slice(-n) })); return; } catch { } } }, 400); }
 function loadHist() { undoS.length = redoS.length = 0; try { const h = JSON.parse(localStorage.getItem('atelier.hist.' + D.id)); if (h) { undoS.push(...(h.u || [])); redoS.push(...(h.r || [])); } } catch { } }
 function pushUndo(pre) { const snap = pre ?? snapshot(); if (undoS[undoS.length - 1] === snap) return; undoS.push(snap); if (undoS.length > HMAX) undoS.shift(); redoS.length = 0; saveHist(); }
-function restore(json) { const o = JSON.parse(json); setTimeout(() => { if (healDesign()) { draw(); toast(healMsg); } }, 0); D.boards = o.boards; D.guides = o.guides; D.books = o.books || []; D.dims = o.dims || {}; D.cdims = o.cdims || []; D.objs = o.objs || []; D.screws = o.screws || {}; D.brackets = o.brackets || {}; D.parts = o.parts || []; if (selPart) selPart = D.parts.find(x => x.id === selPart.id) || null; if (selObj) selObj = D.objs.find(x => x.id === selObj.id) || null; if (o.settings) D.settings = { ...o.settings, showGaps: D.settings.showGaps, showBooks: D.settings.showBooks, showGuides: D.settings.showGuides, showCross: D.settings.showCross, showObjs: D.settings.showObjs, showNames: D.settings.showNames, showFronts: D.settings.showFronts, showScrews: D.settings.showScrews, showTitle: D.settings.showTitle }; if (selGuide) selGuide = D.guides.find(g => g.id === selGuide.id) || null; sel = new Set([...sel].filter(id => byId(id))); if (selBook && !D.books.find(k => k.id === selBook.id)) selBook = null; else if (selBook) selBook = D.books.find(k => k.id === selBook.id); }
+function restore(json) { const o = JSON.parse(json); setTimeout(() => { if (healDesign()) { draw(); toast(healMsg); } }, 0); D.boards = o.boards; D.guides = o.guides; D.books = o.books || []; D.dims = o.dims || {}; D.cdims = o.cdims || []; D.objs = o.objs || []; D.screws = o.screws || {}; D.brackets = o.brackets || {}; D.parts = o.parts || []; if ('bed' in o) D.bed = o.bed; if (selPart) selPart = D.parts.find(x => x.id === selPart.id) || null; if (selObj) selObj = D.objs.find(x => x.id === selObj.id) || null; if (o.settings) D.settings = { ...o.settings, showGaps: D.settings.showGaps, showBooks: D.settings.showBooks, showGuides: D.settings.showGuides, showCross: D.settings.showCross, showObjs: D.settings.showObjs, showNames: D.settings.showNames, showFronts: D.settings.showFronts, showScrews: D.settings.showScrews, showTitle: D.settings.showTitle, showBed: D.settings.showBed, showPip: D.settings.showPip }; if (selGuide) selGuide = D.guides.find(g => g.id === selGuide.id) || null; sel = new Set([...sel].filter(id => byId(id))); if (selBook && !D.books.find(k => k.id === selBook.id)) selBook = null; else if (selBook) selBook = D.books.find(k => k.id === selBook.id); }
 function undo() { if (!undoS.length) return toast('Rien à annuler'); redoS.push(snapshot()); restore(undoS.pop()); selDim = null; saveHist(); changed(); toast(`↶ Annulé · encore ${undoS.length} retour${undoS.length > 1 ? 's' : ''} possible${undoS.length > 1 ? 's' : ''}`); }
 function redo() { if (!redoS.length) return toast('Rien à rétablir'); undoS.push(snapshot()); restore(redoS.pop()); selDim = null; saveHist(); changed(); toast('↷ Rétabli'); }
 
@@ -212,7 +394,8 @@ function bbox(list = D.boards) {
   return { x0, y0, x1, y1 };
 }
 function fitView() {
-  const bb = partsExtent(bbox()) || { x0: 0, y0: 0, x1: 1400, y1: 1000 };
+  const bb = { ...(partsExtent(bbox()) || { x0: 0, y0: 0, x1: 1400, y1: 1000 }) };
+  if (isTdl()) { bb.y0 = Math.min(bb.y0, -80); const B = bedGeom(); if (B && S().showBed !== false) { bb.x0 = Math.min(bb.x0, B.x0); bb.x1 = Math.max(bb.x1, B.x1); bb.y1 = Math.max(bb.y1, B.top); } } // le sol et le lit restent visibles
   const pad = 60, pw = W - 2 * R - pad * 2, ph = H - 2 * R - pad * 2 - (window.innerWidth < 720 && sel.size ? H * .3 : 0);
   const bw_ = Math.max(bb.x1 - bb.x0, 200), bh_ = Math.max(bb.y1 - bb.y0, 200);
   Vw.s = Math.max(.02, Math.min(pw / bw_, ph / bh_, 6));
@@ -237,7 +420,7 @@ function freeSegs(lo, hi, blk) {
   return out.filter(s => s[1] - s[0] > 1);
 }
 function computeGaps() {
-  const out = [], rs = D.boards.map(b => ({ b, ...rect(b) }));
+  const out = [], rs = SB().map(b => ({ b, ...rect(b) }));
   const Hs = rs.filter(r => r.b.o === 'h'), Vs = rs.filter(r => r.b.o === 'v');
   for (const A of Hs) {
     const blk = Vs.filter(v => Math.abs(v.y0 - A.y1) < .6 && v.x1 > A.x0 && v.x0 < A.x1).map(v => [v.x0, v.x1]);
@@ -337,8 +520,8 @@ function letterOf(i) { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; 
 function cutData() {
   const groups = new Map();
   for (const b of D.boards) {
-    const k = b.L + '|' + b.t + '|' + depth(b);
-    if (!groups.has(k)) groups.set(k, { L: b.L, t: b.t, d: depth(b), ids: [] });
+    const mt = matOf(b), k = mt + '|' + b.L + '|' + b.t + '|' + depth(b);
+    if (!groups.has(k)) groups.set(k, { L: b.L, t: b.t, d: depth(b), mat: mt, ids: [] });
     groups.get(k).ids.push(b.id);
   }
   const arr = [...groups.values()].sort((a, b) => b.L - a.L || b.d - a.d || b.t - a.t);
@@ -346,7 +529,7 @@ function cutData() {
   arr.forEach((g, i) => { g.letter = letterOf(i); g.ids.forEach(id => letter[id] = g.letter); });
   // découpe par section (épaisseur × largeur), sans trait de scie
   const stock = S().stock, sections = new Map();
-  for (const g of arr) { const k = g.t + '×' + g.d; if (!sections.has(k)) sections.set(k, { t: g.t, d: g.d, pieces: [] }); for (const _ of g.ids) sections.get(k).pieces.push({ L: g.L, letter: g.letter }); }
+  for (const g of arr) { const k = (g.mat !== 'pin' ? g.mat + '|' : '') + g.t + '×' + g.d; if (!sections.has(k)) sections.set(k, { t: g.t, d: g.d, mat: g.mat, pieces: [] }); for (const _ of g.ids) sections.get(k).pieces.push({ L: g.L, letter: g.letter }); }
   // portes, tiroirs, fonds en pin : coupés dans les mêmes planches (refendues si besoin) ; pieds en pin et tasseaux : dans des tasseaux
   const pc = partsCut();
   for (const x of pc.pieces) {
@@ -356,7 +539,8 @@ function cutData() {
   }
   const plans = [];
   for (const sec of sections.values()) {
-    const bins = [], tooLong = [];
+    const bins = [], tooLong = [], so = isTdl() && !sec.tass ? stockFor(sec.mat || 'pin', sec.t, sec.d, Math.max(0, ...sec.pieces.map(q => q.L))) : null, stock = so ? so.L : S().stock;
+    sec.stockL = stock; if (isTdl() && !sec.tass) sec.note = (MATS[sec.mat || 'pin'].n) + ' · ' + (so ? `planche du magasin de ${fmt(so.W)} cm de large` + (so.W > sec.d + .5 ? `, à refendre à ${fmt(sec.d)} cm` : '') : `⚠ aucune planche ${sec.t} mm de ${fmt(sec.d)} cm ou plus dans ton magasin : ajoute-la dans 🏪`);
     sec.pieces.sort((a, b) => b.L - a.L);
     for (const p of sec.pieces) {
       if (p.L > stock) { tooLong.push(p); continue; }
@@ -372,10 +556,10 @@ function cutData() {
 }
 function jointList() { // A = planche dont le chant reçoit les vis ; B = planche traversée (face d'où l'on visse)
   const out = [], eps = .6;
-  for (const A of D.boards) {
+  for (const A of SB()) {
     const a = rect(A);
-    for (const B of D.boards) {
-      if (B === A || B.o === A.o) continue; const b = rect(B), k = A.id + '>' + B.id;
+    for (const B of SB()) {
+      if (B === A || B.o === A.o) continue; if (Math.min(z0(A) + depth(A), z0(B) + depth(B)) - Math.max(z0(A), z0(B)) <= .5) continue; const b = rect(B), k = A.id + '>' + B.id;
       if (A.o === 'v') { if (Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) <= .5) continue; if (Math.abs(b.y0 - a.y1) < eps) out.push({ key: k, A, B, face: 'top' }); else if (Math.abs(b.y1 - a.y0) < eps) out.push({ key: k, A, B, face: 'bottom' }); }
       else { if (Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) <= .5) continue; if (Math.abs(b.x0 - a.x1) < eps) out.push({ key: k, A, B, face: 'right' }); else if (Math.abs(b.x1 - a.x0) < eps) out.push({ key: k, A, B, face: 'left' }); }
     }
@@ -385,7 +569,7 @@ function jointList() { // A = planche dont le chant reçoit les vis ; B = planch
 const screwsOf = j => D.screws && D.screws[j.key] != null ? D.screws[j.key] : S().screwsPerJoint;
 function screwPts(j) { // têtes de vis sur la face extérieure de B, au milieu de l'épaisseur de A, réparties sur la profondeur
   const n = screwsOf(j); if (!n) return [];
-  const d = Math.min(depth(j.A), depth(j.B)), ins = Math.min(35, d * .2), zs = n === 1 ? [d / 2] : Array.from({ length: n }, (_, i) => ins + i * (d - 2 * ins) / (n - 1));
+  const zo = Math.max(z0(j.A), z0(j.B)), d = Math.min(z0(j.A) + depth(j.A), z0(j.B) + depth(j.B)) - zo, ins = Math.min(35, d * .2), zs = (n === 1 ? [d / 2] : Array.from({ length: n }, (_, i) => ins + i * (d - 2 * ins) / (n - 1))).map(z => z + zo);
   const a = rect(j.A), b = rect(j.B), mx = (a.x0 + a.x1) / 2, my = (a.y0 + a.y1) / 2;
   return zs.map(z => j.face === 'top' ? [mx, b.y1, z, 'y+'] : j.face === 'bottom' ? [mx, b.y0, z, 'y-'] : j.face === 'right' ? [b.x1, my, z, 'x+'] : [b.x0, my, z, 'x-']);
 }
@@ -406,10 +590,10 @@ let bookFmt = 'roman', selBook = null;
 const rng = (seed, i) => { const x = Math.sin(seed * 9301.7 + i * 49297.3) * 233280; return x - Math.floor(x); };
 function bookCount(k) { return Math.max(0, Math.floor(k.w / k.e + 1e-6)); }
 function bookRoom(k) { // place libre au-dessus de la rangée
-  let c = Infinity; for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (r.y0 >= k.y - .5 && r.x1 > k.x && r.x0 < k.x + k.w) c = Math.min(c, r.y0); }
+  let c = Infinity; for (const b of SB()) { if (b.o !== 'h') continue; const r = rect(b); if (r.y0 >= k.y - .5 && r.x1 > k.x && r.x0 < k.x + k.w) c = Math.min(c, r.y0); }
   return c - k.y;
 }
-function shelfUnder(k) { let best = null; for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (Math.abs(r.y1 - k.y) < 1 && r.x0 <= k.x + 1 && r.x1 >= k.x + k.w - 1) best = b; } return best; }
+function shelfUnder(k) { let best = null; for (const b of SB()) { if (b.o !== 'h') continue; const r = rect(b); if (Math.abs(r.y1 - k.y) < 1 && r.x0 <= k.x + 1 && r.x1 >= k.x + k.w - 1) best = b; } return best; }
 function drawBookRow(k, isSel) {
   const fm = BOOKS[k.f] || BOOKS.roman, n = bookCount(k), tooHigh = k.h > bookRoom(k) + .5;
   for (let i = 0; i < n; i++) {
@@ -437,7 +621,7 @@ function bookTrashPt(k) { const [x, y] = toS(k.x + k.w / 2, k.y + k.h); return [
 function bookHandlePts(k) { return [toS(k.x, k.y + k.h / 2), toS(k.x + k.w, k.y + k.h / 2)]; }
 function hitBook(sx, sy) { if (!vis('showBooks')) return null; const [wx, wy] = toW(sx, sy); for (let i = D.books.length - 1; i >= 0; i--) { const k = D.books[i]; if (wx >= k.x && wx <= k.x + k.w && wy >= k.y && wy <= k.y + k.h) return k; } return null; }
 function fillCompartment(wx, wy) {
-  const fm = BOOKS[bookFmt], rs = D.boards.map(b => ({ b, ...rect(b) }));
+  const fm = BOOKS[bookFmt], rs = SB().map(b => ({ b, ...rect(b) }));
   const under = rs.filter(r => r.b.o === 'h' && r.x0 <= wx && r.x1 >= wx && r.y1 <= wy + 1);
   if (!under.length) return toast('Touche juste au-dessus d\'une étagère');
   const base = Math.max(...under.map(r => r.y1)), shelf = under.find(r => r.y1 === base);
@@ -573,10 +757,10 @@ function paintObj(c, t, X, Y, W, H) { // X,Y = coin haut-gauche (px), W×H = tai
 const objIcons = {};
 function objIcon(t) { if (objIcons[t]) return objIcons[t]; const o = OBJS[t], c = document.createElement('canvas'), S_ = 44; c.width = c.height = S_ * 2; const x = c.getContext('2d'), h = o.r > 1 ? S_ * 2 * .8 / o.r : S_ * 2 * .86, w = h * o.r; paintObj(x, t, (S_ * 2 - w) / 2, (S_ * 2 - h) / 2, w, h); return objIcons[t] = c.toDataURL(); }
 // où peut-il se poser ? sur le dessus de la planche horizontale la plus haute sous le point
-function surfaceUnder(x, y) { let best = null; for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (x >= r.x0 - .5 && x <= r.x1 + .5 && r.y1 <= y + 25 && (best == null || r.y1 > best.y1)) best = r; } return best; }
-function roomAbove(x, y) { let c = Infinity; for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (r.y0 >= y - .5 && x >= r.x0 && x <= r.x1) c = Math.min(c, r.y0); } return c - y; }
+function surfaceUnder(x, y) { let best = null; for (const b of SB()) { if (b.o !== 'h') continue; const r = rect(b); if (x >= r.x0 - .5 && x <= r.x1 + .5 && r.y1 <= y + 25 && (best == null || r.y1 > best.y1)) best = r; } return best; }
+function roomAbove(x, y) { let c = Infinity; for (const b of SB()) { if (b.o !== 'h') continue; const r = rect(b); if (r.y0 >= y - .5 && x >= r.x0 && x <= r.x1) c = Math.min(c, r.y0); } return c - y; }
 function cellCenter(x, s) { // centre de la case (entre montants) sur la planche s
-  const blk = D.boards.filter(v => v.o === 'v').map(rect).filter(v => Math.abs(v.y0 - s.y1) < .6 && v.x1 > s.x0 && v.x0 < s.x1).map(v => [v.x0, v.x1]);
+  const blk = SB().filter(v => v.o === 'v').map(rect).filter(v => Math.abs(v.y0 - s.y1) < .6 && v.x1 > s.x0 && v.x0 < s.x1).map(v => [v.x0, v.x1]);
   const seg = freeSegs(s.x0, s.x1, blk).find(([a, b]) => x >= a && x <= b); return seg ? (seg[0] + seg[1]) / 2 : null;
 }
 function settleObj(o, x, y) { // pose l'objet : sur une étagère, centré dans la case s'il en est proche
@@ -643,7 +827,7 @@ function cellRect(a) { const l = rect(byId(a.l)), r = rect(byId(a.r)), b = rect(
 function outerRect(a) { const l = rect(byId(a.l)), r = rect(byId(a.r)), b = rect(byId(a.b)), t = rect(byId(a.t)); return { x0: l.x0, x1: r.x1, y0: b.y0, y1: t.y1 }; }
 // la case autour d'un point : les planches les plus proches à gauche, à droite, en dessous et au-dessus
 function cellAt(wx, wy) {
-  const rs = D.boards.map(b => ({ b, ...rect(b) }));
+  const rs = SB().map(b => ({ b, ...rect(b) }));
   const unders = rs.filter(r => r.b.o === 'h' && r.x0 <= wx + .5 && r.x1 >= wx - .5 && r.y1 <= wy + .5);
   const overs = rs.filter(r => r.b.o === 'h' && r.x0 <= wx + .5 && r.x1 >= wx - .5 && r.y0 >= wy - .5);
   if (!unders.length || !overs.length) return null;
@@ -755,7 +939,7 @@ const brOf = j => { const b = D.brackets && D.brackets[j.key]; return b && b.n >
 // distance libre depuis un point, dans une direction, en ignorant certaines planches
 function freeRay(x, y, dir, half, skip) {
   let best = Infinity, who = null;
-  for (const b of D.boards) {
+  for (const b of SB()) {
     if (skip.includes(b.id)) continue; const r = rect(b);
     if (dir[0] === 'x') { if (r.y1 <= y - half || r.y0 >= y + half) continue; const d = dir[1] === '+' ? r.x0 - x : x - r.x1; if (d > -.5 && d < best) { best = Math.max(0, d); who = b; } }
     else { if (r.x1 <= x - half || r.x0 >= x + half) continue; const d = dir[1] === '+' ? r.y0 - y : y - r.y1; if (d > -.5 && d < best) { best = Math.max(0, d); who = b; } }
@@ -1096,7 +1280,7 @@ const mirrorG = () => D.guides.find(g => g.k === 'miroir') || null;
 // tout ce qui accompagne la sélection : livres et objets posés dans son encombrement
 function selExtras(list) { const bb = bbox(list); return { bb, books: D.books.filter(k => inBB(bookRect(k), bb)), objs: D.objs.filter(o => o.x >= bb.x0 - .6 && o.x <= bb.x1 + .6 && o.y >= bb.y0 - .6 && o.y <= bb.y1 + .6) }; }
 function dropOnShelf(x0, x1, yTop, ids) { // la planche horizontale la plus haute sous ce point (dans la sélection)
-  let best = null; for (const b of D.boards) { if (b.o !== 'h' || (ids && !ids.has(b.id))) continue; const r = rect(b); if (r.x0 <= x1 - 1 && r.x1 >= x0 + 1 && r.y1 <= yTop + 1 && (!best || r.y1 > best)) best = r.y1; } return best;
+  let best = null; for (const b of SB()) { if (b.o !== 'h' || (ids && !ids.has(b.id))) continue; const r = rect(b); if (r.x0 <= x1 - 1 && r.x1 >= x0 + 1 && r.y1 <= yTop + 1 && (!best || r.y1 > best)) best = r.y1; } return best;
 }
 // transforme une liste de planches : f(rect) -> nouveau coin bas-gauche ; lr = gauche-droite inversé, ud = haut-bas inversé
 function transformBoards(list, fx, fy, lr, ud, copy) {
@@ -1378,7 +1562,7 @@ function wallWarn(b) { // conseils de portée pour une étagère
 }
 function wallTap(wx, wy) {
   let best = null, bd = 1e9;
-  for (const b of D.boards) { if (b.o !== 'h') continue; const r = rect(b); if (wx < r.x0 - 2 || wx > r.x1 + 2) continue; const d = r.y0 - wy; if (d < -30 / Vw.s || d > 500) continue; if (d < bd) { bd = d; best = b; } }
+  for (const b of SB()) { if (b.o !== 'h') continue; const r = rect(b); if (wx < r.x0 - 2 || wx > r.x1 + 2) continue; const d = r.y0 - wy; if (d < -30 / Vw.s || d > 500) continue; if (d < bd) { bd = d; best = b; } }
   if (!best) return toast('Touche juste sous l\'étagère, là où tu veux l\'équerre');
   const m = brModel(BRCUR.mur);
   if (!m) { if (!brModels().length && !brFav().size) { toast('Crée d\'abord ton modèle d\'équerre'); brModelForm('mur', null, mm => { closeModal(); BRCUR.mur = mm.id; buildHelp(); }); } else { toast('Choisis d\'abord ton modèle d\'équerre, en bas'); buildHelp(); } return; }
@@ -1454,7 +1638,7 @@ function wallFixList() {
 // ---- répartition des équerres murales : régulière, en évitant les montants posés sous l'étagère ----
 function wallSegs(b) { // zones libres sous l'étagère (en x absolu), hors montants qui partent du dessous
   const r = rect(b); let segs = [[r.x0, r.x1]];
-  for (const v of D.boards) {
+  for (const v of SB()) {
     if (v === b || v.o !== 'v') continue; const q = rect(v);
     if (Math.abs(q.y1 - r.y0) > 3 || q.x1 <= r.x0 || q.x0 >= r.x1) continue;
     segs = segs.flatMap(([a, c]) => q.x1 <= a || q.x0 >= c ? [[a, c]] : [[a, q.x0], [q.x1, c]].filter(([u, w]) => w - u > 1));
@@ -1743,8 +1927,8 @@ function updateBuildBtn() {
 function openBuild() {
   const m = $('#buildMenu');
   if (m.style.display === 'grid') { m.style.display = 'none'; return; }
-  m.innerHTML = BUILD.map(([t, ic, n]) => `<button data-bt="${t}" class="${tool === t ? 'on' : ''}"><span class="bi">${ic}</span><span>${n}</span></button>`).join('');
-  m.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { m.style.display = 'none'; setTool(b.dataset.bt); });
+  m.innerHTML = (isTdl() ? [...TDL_BUILD, ...BUILD.slice(0, 3), ...BUILD.slice(-3)] : BUILD).map(([t, ic, n]) => `<button data-bt="${t}" class="${tool === t ? 'on' : ''}"${TDL_ACT[t] ? ' style="background:#f3ece1"' : ''}><span class="bi">${ic}</span><span>${n}</span></button>`).join('');
+  m.querySelectorAll('[data-bt]').forEach(b => b.onclick = () => { m.style.display = 'none'; if (TDL_ACT[b.dataset.bt]) { setTool('sel'); TDL_ACT[b.dataset.bt](); } else setTool(b.dataset.bt); });
   m.style.display = 'grid'; const r = $('#bBuild').getBoundingClientRect();
   m.style.left = Math.max(8, Math.min(r.left + r.width / 2 - m.offsetWidth / 2, innerWidth - m.offsetWidth - 8)) + 'px';
   m.style.bottom = (innerHeight - r.top + 8) + 'px';
@@ -1809,8 +1993,8 @@ function draw() {
   drawGrid();
   drawBacks();
   if (tool === 'book') cx.globalAlpha = .5;
-  for (const b of D.boards) drawBoard(b, sel.has(b.id), null);
-  cx.globalAlpha = 1;
+  for (const b of [...D.boards].sort((a, c) => (!!c.f - !!a.f) || z0(a) - z0(c))) drawBoard(b, sel.has(b.id), null);
+  cx.globalAlpha = 1; safe(drawBed, 'Lit'); cx.globalAlpha = 1;
   if (S().showBooks !== false) for (const k of D.books) safe(() => drawBookRow(k, selBook === k), 'Livres');
   cx.setLineDash([]); cx.globalAlpha = 1;
   safe(drawObjs, 'Objets'); cx.setLineDash([]); cx.globalAlpha = 1;
@@ -1860,7 +2044,9 @@ function drawBoard(b, isSel, letter, ghost) {
   const ga = cx.globalAlpha;
   const r = rect(b); const [sx, sy] = toS(r.x0, r.y1); const w = (r.x1 - r.x0) * Vw.s, h = (r.y1 - r.y0) * Vw.s;
   cx.globalAlpha = ga * (ghost ? .55 : 1);
-  cx.fillStyle = isSel ? '#f4c48c' : '#e0b47c'; cx.fillRect(sx, sy, w, h);
+  const MT = MATS[matOf(b)];
+  if (isTdl() && z0(b) + (b.f ? b.t : 0) > 0 && !ghost) { const o = Math.min(8, 2 + (z0(b) + (b.f ? b.t : 0)) * Vw.s * .25); cx.fillStyle = 'rgba(60,40,20,.18)'; cx.fillRect(sx + o, sy + o, w, h); } // ombre : planche décollée du mur
+  cx.fillStyle = isSel ? MT.sel : b.f ? MT.flat : MT.fill; cx.fillRect(sx, sy, w, h);
   cx.strokeStyle = 'rgba(120,80,40,.25)'; cx.lineWidth = 1; cx.beginPath();
   if (b.o === 'h' && h > 8) { cx.moveTo(sx + 4, sy + h * .4); cx.lineTo(sx + w - 4, sy + h * .45); } else if (w > 8) { cx.moveTo(sx + w * .45, sy + 4); cx.lineTo(sx + w * .4, sy + h - 4); }
   cx.stroke();
@@ -2121,7 +2307,7 @@ function deleteSel() { if (!sel.size) return; if (selLocked()) return lockedMsg(
 // Caisson = les 4 planches d'un même groupe + ce qui est rangé dedans (planches et livres)
 const inBB = (r, bb) => r.x0 >= bb.x0 - .6 && r.x1 <= bb.x1 + .6 && r.y0 >= bb.y0 - .6 && r.y1 <= bb.y1 + .6;
 const bookRect = k => ({ x0: k.x, x1: k.x + k.w, y0: k.y, y1: k.y + Math.min(k.h, 1) });
-function frames() { const m = new Map(); for (const b of D.boards) if (b.g) { if (!m.has(b.g)) m.set(b.g, []); m.get(b.g).push(b); } return [...m.values()].filter(f => f.length >= 4).map(f => ({ f, bb: bbox(f) })); }
+function frames() { const m = new Map(); for (const b of SB()) if (b.g) { if (!m.has(b.g)) m.set(b.g, []); m.get(b.g).push(b); } return [...m.values()].filter(f => f.length >= 4).map(f => ({ f, bb: bbox(f) })); }
 function caissonAt(wx, wy) { let best = null; for (const c of frames()) { const bb = c.bb; if (wx >= bb.x0 - .6 && wx <= bb.x1 + .6 && wy >= bb.y0 - .6 && wy <= bb.y1 + .6) { const a = (bb.x1 - bb.x0) * (bb.y1 - bb.y0); if (!best || a < best.a) best = { ...c, a }; } } return best; }
 function booksIn(bb) { return D.books.filter(k => inBB(bookRect(k), bb)); }
 // ---------- Cadenas ----------
@@ -2145,7 +2331,7 @@ function startMove(base, wx, wy, tapped, wasSel) {
   drag = { ...base, type: 'move', w0: [wx, wy], orig, borig, tapped, wasSel, locked: selLocked(), ox: Vw.ox, oy: Vw.oy };
 }
 function hostCaisson(b) { if (b.g && D.boards.filter(o => o.g === b.g).length >= 4) return null; const r = rect(b); let best = null; for (const c of frames()) { const bb = c.bb; if (r.x0 >= bb.x0 - .6 && r.x1 <= bb.x1 + .6 && r.y0 >= bb.y0 - .6 && r.y1 <= bb.y1 + .6) { const a = (bb.x1 - bb.x0) * (bb.y1 - bb.y0); if (!best || a < best.a) best = { ...c, a }; } } return best; }
-function insideOf(bb) { return D.boards.filter(b => { if (b.free) return false; const r = rect(b); return r.x0 >= bb.x0 - .6 && r.x1 <= bb.x1 + .6 && r.y0 >= bb.y0 - .6 && r.y1 <= bb.y1 + .6; }); }
+function insideOf(bb) { return SB().filter(b => { if (b.free) return false; const r = rect(b); return r.x0 >= bb.x0 - .6 && r.x1 <= bb.x1 + .6 && r.y0 >= bb.y0 - .6 && r.y1 <= bb.y1 + .6; }); }
 function selectGroup() { const b = byId([...sel][0]); if (!b || !b.g) return; const frame = D.boards.filter(o => o.g === b.g); sel = new Set(insideOf(bbox(frame)).map(o => o.id)); changed(false); }
 function caissonOf(set) {
   // gère aussi un caisson dans un caisson : on prend le cadre le plus grand dont toutes les planches sont sélectionnées
@@ -2205,7 +2391,7 @@ function cornerPts(bb) { const p = [toS(bb.x0, bb.y0), toS(bb.x1, bb.y0), toS(bb
 
 // ---------- Pointeurs ----------
 const pts = new Map(); let drag = null, pinch = null;
-function hitBoard(sx, sy) { const [wx, wy] = toW(sx, sy); const tol = 3 / Vw.s; for (let i = D.boards.length - 1; i >= 0; i--) { const r = rect(D.boards[i]); if (wx >= r.x0 - tol && wx <= r.x1 + tol && wy >= r.y0 - tol && wy <= r.y1 + tol) return D.boards[i]; } return null; }
+function hitBoard(sx, sy) { const [wx, wy] = toW(sx, sy); const tol = 3 / Vw.s; let flat = null; for (let i = D.boards.length - 1; i >= 0; i--) { const r = rect(D.boards[i]); if (wx >= r.x0 - tol && wx <= r.x1 + tol && wy >= r.y0 - tol && wy <= r.y1 + tol) { if (!D.boards[i].f) return D.boards[i]; if (!flat || z0(D.boards[i]) > z0(flat)) flat = D.boards[i]; } } return flat; } // les lattes à plat passent derrière
 function hitGuide(sx, sy, tol) { if (!vis('showGuides')) return null; for (const g of D.guides) { const [gx, gy] = toS(g.pos, g.pos); if (g.axis === 'h' && Math.abs(gy - sy) < tol) return g; if (g.axis === 'v' && Math.abs(gx - sx) < tol) return g; } return null; }
 const inTB = sy => sy < R || sy > H - R, inLR = sx => sx < R || sx > W - R;
 function hitMarker(sx, sy) { if (!vis('showGuides')) return null; for (const g of D.guides) { const [gx, gy] = toS(g.pos, g.pos); if (g.axis === 'v' && inTB(sy) && Math.abs(gx - sx) < 12) return g; if (g.axis === 'h' && inLR(sx) && Math.abs(gy - sy) < 12) return g; } return null; }
@@ -2625,9 +2811,9 @@ ${frameIsSquare(frame) ? '' : `<div style="margin-top:8px;padding:8px;border-rad
       <div class="row" style="margin-top:4px;align-items:center"><span style="font-size:12px;min-width:84px">↕ Hauteur en</span>${[2, 3, 4, 5, 6].map(n => `<button class="btn" data-dv="y${n}" style="padding:6px 10px">${n === 2 ? '½' : n}</button>`).join('')}</div>
       ${D.guides.some(g => g.cz === frame[0].g) ? '<div class="row" style="margin-top:4px"><button class="btn" id="pDvClr">Effacer les règles de ce caisson</button></div>' : ''}
       ${(() => { const n = D.boards.filter(b => b.free && inBB(rect(b), bb)).length; return n ? `<div class="row" style="align-items:center"><span style="font-size:12px;color:var(--mute);flex:1">${n} planche${n > 1 ? 's' : ''} autonome${n > 1 ? 's' : ''} dedans</span><button class="btn pri" id="pFuse">🔗 Fusionner</button></div>` : ''; })()}
-      ${flipHtml()}
+      ${tdlHtml(list)}${flipHtml()}
       <div class="row"><button class="btn" id="pDup">Dupliquer</button><button class="btn danger" id="pDel">Supprimer</button></div>`;
-    bindFlip(p);
+    bindFlip(p); tdlBind(p, list);
     if ($('#pFuse')) $('#pFuse').onclick = () => { pushUndo(); const inside = D.boards.filter(b => inBB(rect(b), bb)); inside.forEach(b => delete b.free); sel = new Set(insideOf(bb).map(b => b.id)); changed(); toast('🔗 Tout ce qui est dans le caisson est lié'); };
     p.querySelectorAll('[data-dv]').forEach(bt => bt.onclick = () => divideCaisson(frame, bt.dataset.dv[0], +bt.dataset.dv.slice(1)));
     if ($('#pDvClr')) $('#pDvClr').onclick = () => { pushUndo(); D.guides = D.guides.filter(g => g.cz !== frame[0].g); changed(); };
@@ -2649,6 +2835,7 @@ ${frameIsSquare(frame) ? '' : `<div style="margin-top:8px;padding:8px;border-rad
       <div class="row" style="margin:0 0 8px;align-items:center"><input id="pName" value="${esc(b.nm || '')}" placeholder="Nom : ${esc(I.name)}" style="flex:1;min-width:0;font:600 14px inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)">${b.nm ? '<button class="btn" id="pNameR" title="Nom automatique">↺</button>' : ''}</div>
       <div class="grid2">${field('Longueur (cm)', 'L', b.L)}<div class="seg" style="align-self:end"><button data-o="h" class="${b.o === 'h' ? 'on' : ''}">━</button><button data-o="v" class="${b.o === 'v' ? 'on' : ''}">┃</button></div>
       ${field('Épaisseur (cm)', 't', b.t)}${field('Largeur (cm)', 'd', depth(b))}</div>
+      ${tdlHtml([b])}
       ${hostCaisson(b) ? `<div class="row" style="align-items:center;margin-top:8px"><span style="font-size:12px;color:var(--mute);flex:1">${b.free ? '✂ Autonome : ne suit pas le caisson' : '🔗 Liée au caisson : bouge avec lui'}</span><button class="btn${b.free ? ' pri' : ''}" id="pLink">${b.free ? '🔗 Lier au caisson' : '✂ Rendre autonome'}</button></div>` : ''}
       ${mirrorG() ? '<div class="row"><button class="btn pri" id="pMirror">⇋ Copie miroir</button></div>' : ''}
       <div class="row"><button class="btn" id="pFit">${b.o === 'h' ? '↔ Ajuster entre montants' : '↕ Ajuster entre planches'}</button>${b.g ? '<button class="btn" id="pGrp">▭ Modifier le caisson</button>' : ''}<button class="btn" id="pDup">Dupliquer</button><button class="btn danger" id="pDel">Supprimer</button></div>`;
@@ -2658,7 +2845,7 @@ ${frameIsSquare(frame) ? '' : `<div style="margin-top:8px;padding:8px;border-rad
       if (k === 'L' || k === 't') b[k] = Math.max(1, v); else if (k === 'd') { if (v === S().d) delete b.d; else b.d = Math.max(1, v); } else b[k] = v;
       changed();
     });
-    p.querySelectorAll('[data-o]').forEach(bt => bt.onclick = () => { if (b.o !== bt.dataset.o) { pushUndo(); b.o = bt.dataset.o; changed(); } });
+    p.querySelectorAll('[data-o]').forEach(bt => bt.onclick = () => { if (b.o !== bt.dataset.o) { pushUndo(); b.o = bt.dataset.o; changed(); } }); tdlBind(p, [b]);
     $('#pFit').onclick = () => fitBetween(b); if ($('#pMirror')) $('#pMirror').onclick = mirrorCopy;
     $('#pName').onchange = e => { pushUndo(); const v = e.target.value.trim(); if (v) b.nm = v; else delete b.nm; changed(); };
     if ($('#pNameR')) $('#pNameR').onclick = () => { pushUndo(); delete b.nm; changed(); };
@@ -2669,9 +2856,9 @@ ${frameIsSquare(frame) ? '' : `<div style="margin-top:8px;padding:8px;border-rad
     p.innerHTML = `<h3><span>${blk ? '🧩 Bloc · ' : ''}${list.length} planches</span><button class="btn" id="pClose">✕</button></h3>
       <div style="color:var(--mute)">Encombrement : <b style="color:var(--ink)">${fmt(bb.x1 - bb.x0)} × ${fmt(bb.y1 - bb.y0)} cm</b></div>
       <div class="grid2" style="margin-top:8px">${field('X gauche (cm)', 'gx', bb.x0)}${field('Y bas (cm)', 'gy', bb.y0)}</div>
-      ${flipHtml()}
+      ${tdlHtml(list)}${flipHtml()}
       <div class="row">${blk ? '<button class="btn" id="pUnblk">Défaire le bloc</button>' : '<button class="btn" id="pBlk">🧩 Assembler en bloc</button>'}<button class="btn" id="pDup">Dupliquer</button><button class="btn danger" id="pDel">Supprimer</button></div>`;
-    bindFlip(p); if ($('#pBlk')) $('#pBlk').onclick = assembleSel; if ($('#pUnblk')) $('#pUnblk').onclick = disassembleSel;
+    bindFlip(p); tdlBind(p, list); if ($('#pBlk')) $('#pBlk').onclick = assembleSel; if ($('#pUnblk')) $('#pUnblk').onclick = disassembleSel;
     p.querySelectorAll('input[data-k]').forEach(inp => inp.onchange = () => {
       const v = parseCm(inp.value); if (!Number.isFinite(v)) return toast('Valeur non comprise');
       pushUndo(); const dx = inp.dataset.k === 'gx' ? v - bb.x0 : 0, dy = inp.dataset.k === 'gy' ? v - bb.y0 : 0;
@@ -2693,7 +2880,7 @@ function decorateLock(p) {
     const n = document.createElement('div'); n.style.cssText = 'font-size:12px;color:var(--mute);margin:-2px 0 8px'; n.textContent = 'Verrouillé : rien ne bouge. Touche 🔒 pour modifier.'; h3.after(n);
   }
 }
-function changed(save = true) { if (save && D.parts && D.parts.length) D.parts = D.parts.filter(partValid); renderPanel(); draw(); if (save) scheduleSave(); }
+function changed(save = true) { if (save && D.parts && D.parts.length) D.parts = D.parts.filter(partValid); renderPanel(); draw(); if (save) scheduleSave(); safe(pipSchedule, 'Aperçu 3D'); }
 
 // ---------- Fenêtres ----------
 // bouton « retour » d'Android : ferme la fenêtre ouverte (débit, pièce, 3D) au lieu de quitter l'app
@@ -2757,19 +2944,19 @@ function debitDialog() {
   if (!D.boards.length) return toast('Ajoute des planches d\'abord');
   const nPlanks = cd.plans.reduce((n, p) => n + p.bins.length, 0);
   let h = `<h2>Débit, découpe et vis<button class="btn" data-close>✕</button></h2>
-    <div class="row" style="margin:0 0 6px"><button class="btn pri" id="dPdf">⬇ Exporter le PDF</button><button class="btn" id="dCopy">Copier la liste</button></div>
+    <div class="row" style="margin:0 0 6px"><button class="btn pri" id="dPdf">⬇ Exporter le PDF</button><button class="btn" id="dCopy">Copier la liste</button>${isTdl() ? '<button class="btn" id="dStore">🏪 Planches de ton magasin</button>' : ''}</div>
     <div class="sec">À acheter</div>`;
-  for (const p of cd.plans) h += `<div><span class="big">${p.bins.length}</span> ${p.tass ? 'tasseau' + (p.bins.length > 1 ? 'x' : '') : 'planche' + (p.bins.length > 1 ? 's' : '')} de ${fmt(s.stock)} cm <span style="color:var(--mute)">· section ${fmt(p.t)} × ${fmt(p.d)}</span>${p.tooLong.length ? ` <b style="color:#b42318">+ ${p.tooLong.length} pièce(s) plus longue(s) que ${fmt(s.stock)} cm</b>` : ''}</div>`;
+  for (const p of cd.plans) h += `<div><span class="big">${p.bins.length}</span> ${p.tass ? 'tasseau' + (p.bins.length > 1 ? 'x' : '') : 'planche' + (p.bins.length > 1 ? 's' : '')} de ${fmt(p.stockL)} cm <span style="color:var(--mute)">· section ${fmt(p.t)} × ${fmt(p.d)}${p.note ? ' · ' + p.note : ''}</span>${p.tooLong.length ? ` <b style="color:#b42318">+ ${p.tooLong.length} pièce(s) plus longue(s) que ${fmt(p.stockL)} cm${isTdl() ? ' : ajoute une longueur dans 🏪' : ''}</b>` : ''}</div>`;
   for (const b of cd.parts.buys) h += `<div><span class="big">${b.q}</span> ${esc(b.txt)}</div>`;
   h += `<div class="sec">Liste de débit (${D.boards.length} pièces)</div><table><tr><th>Repère</th><th>Qté</th><th>Longueur</th><th>Épaisseur × largeur</th><th>Où</th></tr>`;
-  for (const g of cd.groups) h += `<tr><td><span class="tag">${g.letter}</span></td><td class="num">${g.ids.length}</td><td class="num">${fmt(g.L)} cm</td><td>${fmt(g.t)} × ${fmt(g.d)}</td><td style="padding:3px 4px">${miniSvg(g.ids)}</td></tr>`;
+  for (const g of cd.groups) h += `<tr><td><span class="tag">${g.letter}</span></td><td class="num">${g.ids.length}</td><td class="num">${fmt(g.L)} cm</td><td>${fmt(g.t)} × ${fmt(g.d)}${isTdl() ? ' · ' + MATS[g.mat].n : ''}</td><td style="padding:3px 4px">${miniSvg(g.ids)}</td></tr>`;
   { const bi = boardInfo(), pl = D.boards.map(b => ({ b, ...bi[b.id] })).sort((a, b) => a.code.localeCompare(b.code, 'fr', { numeric: true }));
     h += `</table><div class="sec">Pièces</div><table><tr><th>Repère</th><th>Nom</th><th>Longueur</th><th>Où</th></tr>` + pl.map(it => `<tr><td><span class="tag">${it.code}</span></td><td>${esc(it.name)}</td><td class="num">${fmt(it.b.L)} cm</td><td style="padding:3px 4px">${miniSvg([it.b.id], 38, 38)}</td></tr>`).join(''); }
   if (cd.parts.pieces.length) h += `</table><div class="sec">Portes, tiroirs, pieds, tasseaux, fonds</div><table><tr><th>Repère</th><th>Nom</th><th>Qté</th><th>Longueur</th><th>Largeur × ép.</th></tr>` + cd.parts.pieces.map(x => `<tr><td><span class="tag">${x.code}</span></td><td>${esc(x.name)}</td><td class="num">${x.q}</td><td class="num">${fmt(x.L)} cm</td><td>${fmt(x.w)} × ${fmt(x.t)}</td></tr>`).join('');
   h += `</table>` + wallPlanHtml() + drillSectionHtml() + `<div class="sec">Plan de découpe</div><p style="margin:0;color:var(--mute);font-size:12px">Sans trait de scie : garde un peu de marge sur la dernière coupe de chaque planche.</p>`;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
-    h += `<div style="font-size:12px;margin-top:8px"><b>${p.tass ? 'Tasseau' : 'Planche'} ${i + 1}</b> · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm</div><div class="bar">`;
-    for (const pc of bn.pieces) h += `<div style="width:${pc.L / s.stock * 100}%" title="${pc.letter} ${fmt(pc.L)}">${pc.letter} ${fmt(pc.L)}</div>`;
+    h += `<div style="font-size:12px;margin-top:8px"><b>${p.tass ? 'Tasseau' : 'Planche'} ${i + 1}</b> · ${isTdl() && p.mat ? MATS[p.mat].n + ' ' : ''}${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(p.stockL - bn.used)} cm</div><div class="bar">`;
+    for (const pc of bn.pieces) h += `<div style="width:${pc.L / p.stockL * 100}%" title="${pc.letter} ${fmt(pc.L)}">${pc.letter} ${fmt(pc.L)}</div>`;
     h += `</div>`;
   });
   { const iss = drillIssues(), T = tools(), I = boardInfo();
@@ -2778,11 +2965,11 @@ function debitDialog() {
   h += `<div class="sec">Vis</div><div><span class="big">${cd.screws}</span> vis ${s.screwType} <span style="color:var(--mute)">· ${cd.joints} jonctions × ${s.screwsPerJoint} vis, apparentes depuis l'extérieur</span></div>
     <p style="color:var(--mute);font-size:12px">Une jonction = un bout de planche contre la face d'une autre. Prévois quelques vis de plus.</p>`;
   openModal(h);
-  $('#dPdf').onclick = exportPdf;
+  $('#dPdf').onclick = exportPdf; if ($('#dStore')) $('#dStore').onclick = () => storeDialog(debitDialog);
   if ($('#wallPlan')) wallTypeBind($('#mbox'), () => { const sc = $('#mbox').scrollTop; debitDialog(); $('#mbox').scrollTop = sc; });
   { const wf = $('#mbox [data-k="wFloor"]'); if (wf) wf.onchange = () => { const v = parseCm(wf.value); if (!Number.isFinite(v)) return toast('Valeur non comprise'); D.settings.wallFloor = v; scheduleSave(); debitDialog(); setTimeout(() => { const e = $('#wallPlan'); if (e) e.scrollIntoView(); }, 30); }; }
   if ($('#dTools')) $('#dTools').onclick = e => { e.preventDefault(); closeModal(); toolsDialog(); };
-  $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; for (const x of cd.parts.pieces) t += `${x.code}  ${x.q} × ${fmt(x.L)} cm  (${fmt(x.w)} × ${fmt(x.t)})  ${x.name}\n`; t += `Planches : ${nPlanks} × ${fmt(s.stock)} cm\nVis : ${cd.screws} × ${s.screwType}\n`; for (const b of cd.parts.buys) t += `${b.q} × ${b.txt}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
+  $('#dCopy').onclick = async () => { let t = `${D.name}\n`; for (const g of cd.groups) t += `${g.letter}  ${g.ids.length} × ${fmt(g.L)} cm  (${fmt(g.t)} × ${fmt(g.d)})\n`; for (const x of cd.parts.pieces) t += `${x.code}  ${x.q} × ${fmt(x.L)} cm  (${fmt(x.w)} × ${fmt(x.t)})  ${x.name}\n`; t += (isTdl() ? cd.plans.map(p => `${p.bins.length} × planche ${fmt(p.stockL)} cm (${fmt(p.t)} × ${fmt(p.d)}${p.note ? ' · ' + p.note : ''})`).join('\n') + '\n' : `Planches : ${nPlanks} × ${fmt(s.stock)} cm\n`) + `Vis : ${cd.screws} × ${s.screwType}\n`; for (const b of cd.parts.buys) t += `${b.q} × ${b.txt}\n`; try { await navigator.clipboard.writeText(t); toast('Liste copiée'); } catch { toast('Copie refusée par le navigateur'); } };
 }
 
 // ---------- PDF ----------
@@ -2844,7 +3031,7 @@ async function exportPdf() {
   doc.addPage(); let y = M + 2;
   doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.text(`${D.name} — débit`, M, y); y += 8;
   doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-  for (const p of cd.plans) { doc.text(`À acheter : ${p.bins.length} ${p.tass ? 'tasseau(x)' : 'planche(s)'} de ${fmt(s.stock)} cm, section ${fmt(p.t)} × ${fmt(p.d)} cm${p.tooLong.length ? `  (+${p.tooLong.length} pièce(s) trop longue(s))` : ''}`, M, y); y += 5.5; }
+  for (const p of cd.plans) { doc.text(`À acheter : ${p.bins.length} ${p.tass ? 'tasseau(x)' : 'planche(s)'} de ${fmt(p.stockL)} cm, section ${fmt(p.t)} × ${fmt(p.d)} cm${p.note ? ' · ' + p.note.replace(/[⚠🏪]/g, '') : ''}${p.tooLong.length ? `  (+${p.tooLong.length} pièce(s) trop longue(s))` : ''}`, M, y); y += 5.5; }
   doc.text(`Vis : ${cd.screws} × ${s.screwType}  (${cd.joints} jonctions × ${s.screwsPerJoint})`, M, y); y += 5.5;
   for (const b of cd.parts.buys) { doc.text(`${b.q} × ${b.txt}`, M, y); y += 5.5; }
   { const iss = drillIssues(), I = boardInfo(); if (iss.length) { doc.setTextColor(180, 35, 24); doc.setFont('helvetica', 'bold'); doc.text('Attention visseuse :', M, y); y += 5; doc.setFont('helvetica', 'normal');
@@ -2870,10 +3057,10 @@ async function exportPdf() {
   const barW = PW - 2 * M;
   for (const p of cd.plans) p.bins.forEach((bn, i) => {
     if (y > PH - M - 14) { doc.addPage(); y = M + 4; }
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(`${p.tass ? 'Tasseau' : 'Planche'} ${i + 1} · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(s.stock - bn.used)} cm`, M, y); y += 2;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.text(`${p.tass ? 'Tasseau' : 'Planche'} ${i + 1} · ${fmt(p.t)} × ${fmt(p.d)} · chute ${fmt(p.stockL - bn.used)} cm`, M, y); y += 2;
     doc.setDrawColor(107, 74, 43); doc.setFillColor(238, 238, 238); doc.rect(M, y, barW, 9, 'FD');
     let x = M; doc.setFont('helvetica', 'bold');
-    for (const pc of bn.pieces) { const w = pc.L / s.stock * barW; doc.setFillColor(224, 180, 124); doc.rect(x, y, w, 9, 'FD'); if (w > 12) doc.text(`${pc.letter} ${fmt(pc.L)}`, x + w / 2, y + 5.6, { align: 'center' }); else if (w > 3) doc.text(pc.letter, x + w / 2, y + 5.6, { align: 'center' }); x += w; }
+    for (const pc of bn.pieces) { const w = pc.L / p.stockL * barW; doc.setFillColor(224, 180, 124); doc.rect(x, y, w, 9, 'FD'); if (w > 12) doc.text(`${pc.letter} ${fmt(pc.L)}`, x + w / 2, y + 5.6, { align: 'center' }); else if (w > 3) doc.text(pc.letter, x + w / 2, y + 5.6, { align: 'center' }); x += w; }
     y += 15;
   });
   wallPlanPdf(doc, M, PW, PH);
@@ -2906,9 +3093,10 @@ async function listDesigns() {
   catch { return local.sort((a, b) => b.updatedAt - a.updatedAt); }
 }
 async function menuDialog() {
-  openModal(`<h2>Mes meubles<button class="btn" data-close>✕</button></h2><div class="row" style="margin:0 0 10px"><button class="btn pri" id="mNew">+ Nouveau meuble</button><button class="btn" id="mVer">🗂 Versions de « ${esc(D.name)} »</button><button class="btn" id="mExp">⬇ Exporter (.json)</button><label class="btn" style="cursor:pointer">⬆ Importer<input type="file" id="mImp" accept=".json,application/json" hidden></label></div><div class="list" id="mList">Chargement…</div>`);
+  openModal(`<h2>Mes meubles<button class="btn" data-close>✕</button></h2><div class="row" style="margin:0 0 10px"><button class="btn pri" id="mNew">+ Nouveau meuble</button><button class="btn pri" id="mTdl">+ 🛏 Tête de lit</button><button class="btn" id="mVer">🗂 Versions de « ${esc(D.name)} »</button><button class="btn" id="mExp">⬇ Exporter (.json)</button><label class="btn" style="cursor:pointer">⬆ Importer<input type="file" id="mImp" accept=".json,application/json" hidden></label></div><div class="list" id="mList">Chargement…</div>`);
   $('#mVer').onclick = versionsDialog;
   $('#mNew').onclick = () => { scheduleSave(); loadDesign(newDesign()); closeModal(); scheduleSave(); };
+  $('#mTdl').onclick = () => { scheduleSave(); loadDesign(newTdl()); closeModal(); scheduleSave(); setTimeout(() => { fitView(); toast('🛏 Tête de lit : commence par Construire → Lattes, Chevets ou Exemple'); pipSchedule(); }, 50); };
   $('#mExp').onclick = () => saveFile((D.name || 'meuble') + '.json', JSON.stringify(D, null, 1));
   $('#mImp').onchange = async e => { const f = e.target.files[0]; if (!f) return; try { const d = JSON.parse(await f.text()); if (!Array.isArray(d.boards)) throw 0; d.id = uid(); d.name = (d.name || 'Import') + ' (import)'; loadDesign(d); closeModal(); scheduleSave(); } catch { toast('Fichier non reconnu'); } };
   const list = await listDesigns(), el = $('#mList'); if (!el) return;
@@ -3326,6 +3514,7 @@ function v3Open() { return $('#v3d').style.display === 'flex'; }
 const brShown = () => v3Open() ? V3.showScrews : vis('showScrews'); // l'œil « Équerres » cache aussi les équerres murales
 async function open3D() {
   if (!D.boards.length) return toast('Dessine d\'abord un meuble');
+  { const pe = $('#pip3'); if (pe) pe.style.display = 'none'; }
   if (!v3Open()) layerOpen('3d'); V3.showScrews = vis('showScrews'); $('#v3Screw').classList.toggle('on', V3.showScrews); $('#v3d').style.display = 'flex'; V3.sel = null; panel3();
   $('#v3dMsg').textContent = 'Chargement de la 3D…';
   try { await load3(); } catch { $('#v3dMsg').textContent = 'La 3D n\'a pas pu se charger : vérifie ta connexion.'; return; }
@@ -3396,10 +3585,11 @@ function build3() {
   const { g, mats } = T3; clear3(g.boards); clear3(g.deco); clear3(g.env);
   const bb = bbox(); let maxD = 0;
   for (const b of D.boards) {
-    const w = bw(b), h = bh(b), d = depth(b); maxD = Math.max(maxD, d);
+    const w = bw(b), h = bh(b), d = zExt(b), zo = z0(b); maxD = Math.max(maxD, zo + d);
     const geo = new THREE.BoxGeometry(w, h, d), uv = geo.attributes.uv; // grain dans le sens de la longueur
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * (b.L / 600), uv.getY(i) * .5);
-    const m = new THREE.Mesh(geo, b.o === 'h' ? mats.h : mats.v); m.position.set(b.x + w / 2, b.y + h / 2, d / 2); m.castShadow = m.receiveShadow = true; m.userData.board = b; g.boards.add(m);
+    const oak = matOf(b) === 'chene'; if (oak && !mats.oh) { mats.oh = new THREE.MeshStandardMaterial({ map: mats.h.map, color: MATS.chene.c3, roughness: .7 }); mats.ov = new THREE.MeshStandardMaterial({ map: mats.v.map, color: MATS.chene.c3, roughness: .7 }); }
+    const m = new THREE.Mesh(geo, b.o === 'h' ? (oak ? mats.oh : mats.h) : (oak ? mats.ov : mats.v)); m.position.set(b.x + w / 2, b.y + h / 2, zo + d / 2); m.castShadow = m.receiveShadow = true; m.userData.board = b; g.boards.add(m);
     const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), mats.edge); e.position.copy(m.position); g.boards.add(e);
   }
   T3.pm = T3.pm || {};
@@ -3429,12 +3619,13 @@ function build3() {
   if (vis('showObjs')) for (const o of D.objs) {
     let tex = T3.sprites[o.t]; if (!tex) { const c = document.createElement('canvas'), H = 256, W = Math.round(H * OBJS[o.t].r); c.width = W; c.height = H; paintObj(c.getContext('2d'), o.t, 0, 0, W, H); tex = T3.sprites[o.t] = new THREE.CanvasTexture(c); }
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true })), w = objW(o), sh = surfaceUnder(o.x, o.y + 1);
-    s.scale.set(w, o.h, 1); s.position.set(o.x, o.y + o.h / 2, (sh ? S().d : maxD) / 2); g.deco.add(s);
+    s.scale.set(w, o.h, 1); s.position.set(o.x, o.y + o.h / 2, sh ? z0(sh) + depth(sh) / 2 : maxD / 2); g.deco.add(s);
   }
   // sol et mur pour l'ombre
   const xb = partsExtent(bb), backE = Math.max(0, ...parts('dos').map(p => p.mat === 'pin' ? S().t : (p.ep || 5)));
   const span = Math.max(bb.x1 - bb.x0, bb.y1 - bb.y0) * 4 + 4000;
-  const fy = V3.wall ? Math.min(xb.y0, bb.y0 - (S().wallFloor || 0)) : xb.y0, wz = -1.5 - backE; // au mur : le sol descend à la vraie hauteur
+  bed3(g.deco); if (isTdl()) { const B = bedGeom(); if (B && S().showBed !== false) { maxD = Math.max(maxD, bedZ() + 5 + B.L); xb.x0 = Math.min(xb.x0, B.x0); xb.x1 = Math.max(xb.x1, B.x1); } }
+  const fy = isTdl() ? Math.min(0, xb.y0) : V3.wall ? Math.min(xb.y0, bb.y0 - (S().wallFloor || 0)) : xb.y0, wz = -1.5 - backE; // au mur : le sol descend à la vraie hauteur
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.floor); floor.rotation.x = -Math.PI / 2; floor.position.set((bb.x0 + bb.x1) / 2, fy - .5, 0); floor.receiveShadow = true; g.env.add(floor);
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(span, span), mats.wall); wall.position.set((bb.x0 + bb.x1) / 2, fy + span / 2 - 1, wz); wall.receiveShadow = true; wall.userData.wall = true; g.env.add(wall);
   if (V3.wall && S().v3marks !== false) wallMarks3(g.env, bb, fy, wz);
@@ -3541,10 +3732,11 @@ function partBoxes() {
 const AR_DEFAULT = 'https://solaltoumayan.github.io/atelier-ar/';
 const arBase = () => { try { return localStorage.getItem('atelier.arBase') || AR_DEFAULT; } catch { return AR_DEFAULT; } };
 async function arPayload() {
-  const r1 = v => Math.round(v * 10) / 10, M = { n: D.name, b: D.boards.map(b => [r1(b.x), r1(b.y), r1(bw(b)), r1(bh(b)), r1(depth(b)), b.o]), k: [], o: [] };
+  const r1 = v => Math.round(v * 10) / 10, M = { n: D.name, b: D.boards.filter(b => !b.f && !z0(b) && matOf(b) === 'pin').map(b => [r1(b.x), r1(b.y), r1(bw(b)), r1(bh(b)), r1(depth(b)), b.o]), k: [], o: [] };
   if (vis('showBooks')) for (const k of D.books) { const f = BOOKS[k.f] || BOOKS.roman, n = bookCount(k), sh = shelfUnder(k), dd = sh ? depth(sh) : S().d, z1 = Math.max(dd, f.p); for (let i = 0; i < n; i++) { const hh = k.h * (1 - f.v * rng(k.seed, i)); M.k.push([r1(k.x + i * k.e), r1(k.y), r1(k.e - .6), r1(hh), r1(z1 - f.p), r1(z1), f.manga ? '#f7f5ef' : f.pal[Math.floor(rng(k.seed + 7, i) * f.pal.length)]]); } }
   if (vis('showObjs')) for (const o of D.objs) M.o.push([o.t, r1(o.x), r1(o.y), r1(o.h), r1(S().d / 2)]);
   M.p = partBoxes().map(q => [...q.slice(0, 6).map(r1), q[6], q[7] || 'box']);
+  for (const b of D.boards) if (b.f || z0(b) || matOf(b) !== 'pin') { const r = rect(b); M.p.push([r1(r.x0), r1(r.y0), r1(z0(b)), r1(r.x1), r1(r.y1), r1(z0(b) + zExt(b)), matOf(b) === 'pin' ? 'w' : MATS[matOf(b)].hex, 'box']); } // tête de lit : relief et chêne
   const z = await new Response(new Blob([JSON.stringify(M)]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
   let bin = ''; new Uint8Array(z).forEach(c => bin += String.fromCharCode(c)); return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -3594,15 +3786,16 @@ $('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').cl
 // ---------- Boutons ----------
 $('#bUndo').onclick = undo; $('#bRedo').onclick = redo; $('#bFit').onclick = fitView;
 $('#bVer').onclick = versionsDialog; $('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
+const eyeL = () => isTdl() ? [...EYE, ['showBed', '🛏', 'Le lit'], ['showPip', '🧊', 'Aperçu 3D en direct']] : EYE;
 const EYE = [['showGaps', '📏', 'Cotes'], ['showGuides', '┆', 'Règles'], ['showBooks', '📚', 'Livres'], ['showObjs', '🌍', 'Objets'], ['showNames', '🏷', 'Noms des planches'], ['showCross', '✛', 'Croix de centre'], ['showFronts', '🚪', 'Portes et tiroirs'], ['showScrews', '🔩', 'Équerres (murales et d\'assemblage), vis et alertes'], ['showTitle', '✒️', 'Titre du meuble']];
-function updateEye() { $('#eyeDot').style.display = EYE.some(([k]) => !vis(k)) ? 'block' : 'none'; if ($('#eyeMenu').style.display === 'block') renderEye(); }
+function updateEye() { $('#eyeDot').style.display = eyeL().some(([k]) => !vis(k)) ? 'block' : 'none'; if ($('#eyeMenu').style.display === 'block') renderEye(); }
 function renderEye() {
   const m = $('#eyeMenu');
-  m.innerHTML = EYE.map(([k, ic, n]) => `<button data-eye="${k}" class="${vis(k) ? 'on' : ''}"><span style="width:22px;text-align:center">${ic}</span>${n}<span class="sw"></span></button>`).join('')
-    + `<button data-eye="all" style="justify-content:center;color:var(--mute);font-size:13px">${EYE.every(([k]) => vis(k)) ? 'Tout cacher' : 'Tout afficher'}</button>`;
+  m.innerHTML = eyeL().map(([k, ic, n]) => `<button data-eye="${k}" class="${vis(k) ? 'on' : ''}"><span style="width:22px;text-align:center">${ic}</span>${n}<span class="sw"></span></button>`).join('')
+    + `<button data-eye="all" style="justify-content:center;color:var(--mute);font-size:13px">${eyeL().every(([k]) => vis(k)) ? 'Tout cacher' : 'Tout afficher'}</button>`;
   m.querySelectorAll('[data-eye]').forEach(b => b.onclick = () => {
     const k = b.dataset.eye;
-    if (k === 'all') { const show = !EYE.every(([x]) => vis(x)); EYE.forEach(([x]) => S()[x] = show); } else S()[k] = !vis(k);
+    if (k === 'all') { const show = !eyeL().every(([x]) => vis(x)); eyeL().forEach(([x]) => S()[x] = show); } else S()[k] = !vis(k);
     if (!vis('showGuides')) selGuide = null; if (!vis('showGaps')) selDim = null; if (!vis('showBooks')) selBook = null; if (!vis('showObjs')) selObj = null;
     updateEye(); changed();
   });
@@ -3624,7 +3817,7 @@ $('#name').onchange = () => { D.name = $('#name').value.trim() || 'Sans nom'; sc
   // à l'ouverture : un plan vierge (toujours le même tant qu'on n'a rien dessiné dessus) ; au retour de la caméra : le meuble qu'on regardait
   const all = LS.get('atelier.designs') || {};
   let resume = null, resume3d = false; try { resume = sessionStorage.getItem('atelier.resume'); resume3d = sessionStorage.getItem('atelier.resume3d') === '1'; sessionStorage.removeItem('atelier.resume'); sessionStorage.removeItem('atelier.resume3d'); } catch { }
-  const isBlank = d => d && !(d.boards || []).length && !(d.books || []).length && !(d.objs || []).length && !(d.parts || []).length && !(d.versions || []).length && (d.name || 'Nouveau meuble') === 'Nouveau meuble';
+  const isBlank = d => d && !(d.boards || []).length && !(d.books || []).length && !(d.objs || []).length && !(d.parts || []).length && !(d.versions || []).length && (d.name || 'Nouveau meuble') === 'Nouveau meuble' && d.mode !== 'tdl';
   const d0 = (resume && all[resume]) || Object.values(all).filter(isBlank).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
   if (d0) { D = { ...newDesign(), ...d0, settings: { ...DEF_SETTINGS, ...(d0.settings || {}) } }; loadHist(); healDesign(); }
   $('#name').value = D.name;
