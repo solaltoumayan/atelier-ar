@@ -2221,10 +2221,10 @@ function drawGuides(onlyMirror) {
   }
   cx.setLineDash([]);
 }
-function handlePts(b) { const r = rect(b); return b.o === 'h' ? [toS(r.x0, (r.y0 + r.y1) / 2), toS(r.x1, (r.y0 + r.y1) / 2)] : [toS((r.x0 + r.x1) / 2, r.y0), toS((r.x0 + r.x1) / 2, r.y1)]; }
+function handlePts(b) { const r = rect(b), mx = (r.x0 + r.x1) / 2, my = (r.y0 + r.y1) / 2, P = b.o === 'h' ? [toS(r.x0, my), toS(r.x1, my)] : [toS(mx, r.y0), toS(mx, r.y1)]; if (b.f) P.push(...(b.o === 'h' ? [toS(mx, r.y0), toS(mx, r.y1)] : [toS(r.x0, my), toS(r.x1, my)])); return P; } // planche à plat : 2 points de plus, au milieu des bords, pour sa largeur
 function drawHandles(b) {
   if (!b) return;
-  for (const [hx, hy] of handlePts(b)) { cx.fillStyle = '#fff'; cx.strokeStyle = '#d9480f'; cx.lineWidth = 2; cx.beginPath(); cx.arc(hx, hy, 8, 0, Math.PI * 2); cx.fill(); cx.stroke(); }
+  handlePts(b).forEach(([hx, hy], i) => { cx.fillStyle = i > 1 ? '#d9480f' : '#fff'; cx.strokeStyle = i > 1 ? '#fff' : '#d9480f'; cx.lineWidth = 2; cx.beginPath(); cx.arc(hx, hy, i > 1 ? 7 : 8, 0, Math.PI * 2); cx.fill(); cx.stroke(); });
 }
 let liveLabel = null;
 function drawLiveLabel() { const [x, y, t] = liveLabel; cx.font = '700 13px -apple-system,Segoe UI,sans-serif'; const tw = cx.measureText(t).width + 12; let bx = Math.min(Math.max(x + 14, R + 4), W - tw - 4), by = Math.max(y - 34, R + 4); cx.fillStyle = '#1f1a14'; cx.beginPath(); cx.roundRect ? cx.roundRect(bx, by, tw, 22, 6) : cx.rect(bx, by, tw, 22); cx.fill(); cx.fillStyle = '#fff'; cx.textAlign = 'left'; cx.textBaseline = 'middle'; cx.fillText(t, bx + 6, by + 11.5); }
@@ -2527,7 +2527,7 @@ cv.addEventListener('pointerdown', e => {
   base.pw = panelOn; panelOn = false;
   if (sel.size === 1) {
     const b = byId([...sel][0]);
-    if (b && !b.lk) { const hp = handlePts(b); for (let i = 0; i < 2; i++) if (Math.hypot(hp[i][0] - sx, hp[i][1] - sy) < (touch ? 20 : 12)) { drag = { ...base, type: 'stretch', b, end: i, orig: { ...b } }; return; } }
+    if (b && !b.lk) { const hp = handlePts(b); for (let i = hp.length - 1; i >= 0; i--) if (Math.hypot(hp[i][0] - sx, hp[i][1] - sy) < (touch ? 20 : 12)) { drag = { ...base, type: 'stretch', b, end: i, orig: { ...b } }; return; } }
   }
   if (selBook && !selBook.lk) { const hp = bookHandlePts(selBook); for (let i = 0; i < 2; i++) if (Math.hypot(hp[i][0] - sx, hp[i][1] - sy) < (touch ? 20 : 12)) { drag = { ...base, type: 'bstretch', k: selBook, end: i, orig: { ...selBook } }; return; } }
   { const hd = (sel.size === 1 || selBook) ? hitDim(sx, sy, touch ? 8 : 5) : null; if (hd) { selDim = hd.key; sel.clear(); selBook = null; const st = D.dims[hd.key]; drag = { ...base, type: 'dim', hd, locked: !!(st && st.lk), ox: Vw.ox, oy: Vw.oy }; changed(false); return; } }
@@ -2640,9 +2640,15 @@ cv.addEventListener('pointermove', e => {
   }
   else if (drag.type === 'stretch') {
     const b = drag.b, o = drag.orig, ex = new Set([b.id]);
-    if (b.o === 'h') { const v = snap1(wx, targetsX(ex), 'x'); snapLines.y = null; if (drag.end === 1) { b.L = Math.max(10, v - o.x); } else { const end = o.x + o.L; b.x = Math.min(v, end - 10); b.L = end - b.x; } }
+    if (drag.end > 1) { // largeur d'une planche à plat : le bord bouge, aimanté sur les bords des autres planches
+      const H = b.o === 'h', v = H ? snap1(wy, targetsY(ex), 'y') : snap1(wx, targetsX(ex), 'x'), p0 = H ? o.y : o.x, w0 = o.d || S().d;
+      if (H) snapLines.x = null; else snapLines.y = null;
+      if (drag.end === 3) b.d = Math.max(10, Math.round(v - p0)); else { const end = p0 + w0, n = Math.min(Math.round(v), end - 10); b[H ? 'y' : 'x'] = n; b.d = end - n; }
+      liveLabel = [sx, sy, 'Largeur ' + fmt(b.d) + ' cm'];
+    }
+    else if (b.o === 'h') { const v = snap1(wx, targetsX(ex), 'x'); snapLines.y = null; if (drag.end === 1) { b.L = Math.max(10, v - o.x); } else { const end = o.x + o.L; b.x = Math.min(v, end - 10); b.L = end - b.x; } }
     else { const v = snap1(wy, targetsY(ex), 'y'); snapLines.x = null; if (drag.end === 1) { b.L = Math.max(10, v - o.y); } else { const end = o.y + o.L; b.y = Math.min(v, end - 10); b.L = end - b.y; } }
-    liveLabel = [sx, sy, 'Longueur ' + fmt(b.L) + ' cm'];
+    if (drag.end < 2) liveLabel = [sx, sy, 'Longueur ' + fmt(b.L) + ' cm'];
   }
   else if (drag.type === 'bmove') {
     const k = selBook; let dx = wx - drag.w0[0], dy = wy - drag.w0[1];
