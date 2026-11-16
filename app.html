@@ -45,6 +45,11 @@ label.f input:disabled{background:#f1ece3;color:#8a7b64;border-style:dashed}
 .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .seg button{border:none;background:#fff;padding:7px 12px}
 .seg button.on{background:var(--ink);color:#fff}
+#axLock{position:absolute;right:40px;top:40px;display:none;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 4px 14px rgba(60,40,10,.12);padding:3px;gap:2px;z-index:3}
+#axLock button{border:0;background:none;border-radius:9px;min-width:38px;height:34px;font-size:19px;line-height:1;color:var(--ink);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 7px}
+#axLock button i{font-style:normal;font-size:11px;font-weight:600;display:none}
+#axLock button.on{background:var(--ink);color:#fff}
+#axLock button.on i{display:inline}
 #hint{position:absolute;left:50%;top:45%;transform:translate(-50%,-50%);text-align:center;color:var(--mute);pointer-events:none;max-width:340px;font-size:14px;line-height:1.5}
 #hint b{color:var(--ink)}
 #modal{position:fixed;inset:0;background:rgba(30,20,10,.35);display:none;align-items:center;justify-content:center;z-index:20;padding:12px}
@@ -115,7 +120,7 @@ input.kpOn{outline:3px solid var(--acc)!important}
 <script>window.ATELIER_SEED = [{"boards":[{"L":620,"g":"mxflv1yr","id":"tub4uvf1","lk":true,"o":"h","t":18,"x":0,"y":0},{"L":620,"g":"mxflv1yr","id":"oozrsori","lk":true,"o":"h","t":18,"x":0,"y":1482},{"L":1464,"g":"mxflv1yr","id":"fme2riqc","lk":true,"o":"v","t":18,"x":0,"y":18},{"L":1464,"g":"mxflv1yr","id":"yi40xmka","lk":true,"o":"v","t":18,"x":602,"y":18},{"L":271,"g":"hdxycp5n","id":"5nbxj0k5","lk":true,"o":"h","t":18,"x":174.5,"y":562.5},{"L":271,"g":"hdxycp5n","id":"n5dirduy","lk":true,"o":"h","t":18,"x":174.5,"y":919.5},{"L":339,"g":"hdxycp5n","id":"atkj7qiu","lk":true,"o":"v","t":18,"x":174.5,"y":580.5},{"L":339,"g":"hdxycp5n","id":"k2796bow","lk":true,"o":"v","t":18,"x":427.5,"y":580.5},{"L":271,"id":"uaossq1b","lk":true,"o":"h","t":18,"x":174.5,"y":241},{"L":584,"id":"gkz902h8","lk":true,"o":"h","t":18,"x":18,"y":1223},{"L":156.5,"id":"phw8n2pu","lk":true,"o":"h","t":18,"x":445.5,"y":741},{"L":156.5,"id":"bqevcitp","lk":true,"o":"h","t":18,"x":18,"y":741},{"L":223,"id":"r773z2to","lk":true,"o":"v","t":18,"x":301,"y":18},{"L":156.5,"id":"2mp1d6ej","lk":true,"o":"h","t":18,"x":18,"y":341},{"L":100,"id":"56y4qyt9","lk":true,"o":"v","t":18,"x":427.5,"y":259},{"L":100,"id":"ee0h7uc8","lk":true,"o":"v","t":18,"x":174.5,"y":259},{"L":156.5,"id":"j1rblq52","lk":true,"o":"h","t":18,"x":445.5,"y":341}],"books":[{"e":12,"f":"bd","h":300,"id":"u01iy7xt","seed":891,"w":156,"x":18,"y":359},{"e":18,"f":"manga","h":180,"id":"cmjssdmc","lk":true,"seed":972,"w":271,"x":174.5,"y":937.5},{"e":12,"f":"bd","h":300,"id":"q6kfxviz","seed":468,"w":156.5,"x":445.5,"y":359},{"e":30,"f":"roman","h":225,"id":"575iadvi","seed":202,"w":584,"x":18,"y":1241},{"e":20,"f":"poche","h":178,"id":"dz16hkkz","seed":906,"w":235,"x":192.5,"y":259},{"e":15,"f":"comics","h":260,"id":"et2yrf3a","seed":194,"w":156.5,"x":445.5,"y":759},{"e":15,"f":"comics","h":260,"id":"llbf8tj8","seed":108,"w":156.5,"x":18,"y":759},{"e":30,"f":"beau","h":300,"id":"f296ckhr","seed":202,"w":156.5,"x":18,"y":18},{"e":30,"f":"beau","h":300,"id":"nklhgcgh","seed":706,"w":156.5,"x":445.5,"y":18},{"e":20,"f":"poche","h":178,"id":"tdujuo9f","seed":966,"w":126.5,"x":174.5,"y":18},{"e":20,"f":"poche","h":178,"id":"gbn50lpb","seed":560,"w":126.5,"x":319,"y":18}],"cdims":[],"dims":{"H":{"hid":true,"off":67,"t":0.5672965391866798},"W":{"hid":true},"h:292zb313:atkj7qiu:0":{"hid":true},"h:56y4qyt9:yi40xmka:0":{"hid":true},"h:atkj7qiu:k2796bow:0":{"at":995,"hid":true,"t":0.4791172100164662},"h:ee0h7uc8:56y4qyt9:0":{"hid":true},"h:fme2riqc:atkj7qiu:0":{"hid":true},"h:fme2riqc:atkj7qiu:1":{"hid":true},"h:fme2riqc:r773z2to:0":{"hid":true},"h:fme2riqc:yi40xmka:0":{"at":1586,"t":0.630782343222204},"h:fme2riqc:yi40xmka:2":{"hid":true},"h:fme2riqc:yi40xmka:3":{"hid":true},"h:k2796bow:yi40xmka:0":{"hid":true},"h:k2796bow:yi40xmka:1":{"hid":true},"h:r773z2to:yi40xmka:0":{"hid":true},"v:2mp1d6ej:bqevcitp:0":{"hid":true},"v:5nbxj0k5:n5dirduy:0":{"hid":true},"v:bqevcitp:gkz902h8:0":{"hid":true},"v:gkz902h8:oozrsori:0":{"hid":true},"v:n5dirduy:gkz902h8:0":{"hid":true},"v:n5dirduy:oozrsori:0":{"hid":true},"v:phw8n2pu:gkz902h8:0":{"hid":true},"v:tub4uvf1:5nbxj0k5:0":{"at":103,"hid":true,"t":0.12848996415515593},"v:tub4uvf1:oozrsori:0":{"at":-204,"t":0.5298014334680583},"v:tub4uvf1:uaossq1b:0":{"hid":true},"v:tub4uvf1:uaossq1b:1":{"hid":true},"v:uaossq1b:5nbxj0k5:0":{"hid":true},"v:va43v20r:5nbxj0k5:0":{"hid":true}},"guides":[{"axis":"v","id":"fsdulk0m","pos":973},{"axis":"v","id":"nvicg8rc","pos":310},{"axis":"v","id":"ebn5dufg","pos":192.5},{"axis":"v","id":"bqv1114m","pos":445.5}],"id":"n9b3f631","name":"Nouveau meuble","objs":[{"centered":true,"h":261,"id":"ol572j2b","t":"lampe","x":310,"y":580.5}],"screws":{},"settings":{"assembly":"top","d":200,"screwType":"4 × 40 mm","screwsPerJoint":2,"showBooks":true,"showCross":false,"showGaps":false,"showGuides":false,"showNames":false,"showObjs":true,"stock":2000,"t":18},"updatedAt":1794410972613}];
 if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
-window.ATELIER_BUILD='1794825751';
+window.ATELIER_BUILD='1794863952';
 
 // mise à jour : l'app vérifie s'il existe une version plus récente et propose de recharger (ton meuble reste ouvert)
 (() => {
@@ -149,6 +154,7 @@ window.ATELIER_BUILD='1794825751';
     <canvas id="cv"></canvas>
     <div id="hint"><b>Glisse depuis un bord gradué</b> : haut ou bas pour une règle horizontale, gauche ou droite pour une règle verticale. Bouge lentement pour régler au millimètre.<br>Choisis <b>Caisson</b> et trace un rectangle, ou <b>Planche</b> et trace une planche.<br>Tout s'aimante aux règles et aux planches.</div>
     <div id="panel"></div>
+    <div id="axLock" title="Déplacer sur un seul axe"><button data-ax="">✥<i>Libre</i></button><button data-ax="x">↔<i>Gauche-droite</i></button><button data-ax="y">↕<i>Haut-bas</i></button></div>
   </div>
   <div id="tools">
     <button class="btn on" data-tool="sel"><span class="ico">➚</span><span><span class="lbl-d">Sélection</span><span class="lbl-m">Choix</span></span></button>
@@ -606,7 +612,7 @@ function bedZero() {
   const m = mirrorG(), off = m && m.axis === 'v' ? m.pos : null;
   toast(`⌖ Milieu du lit à 0 · bas du lit sur le sol à 0${dx ? ` · tout le plan a bougé de ${fmt(Math.abs(dx))} cm` : ''}${off != null && Math.abs(off) > .5 ? ` · la règle miroir est à ${fmt(off)} cm du milieu du lit` : ''}`);
 }
-const APP_V = '16/11 · 15h10';
+const APP_V = '16/11 · 22h40';
 function zeroDialog() { // recaler le zéro gauche / droite : tout le plan bouge d'un bloc
   const m = mirrorG(), mv = m && m.axis === 'v' ? m : null, bb = D.boards.length ? bbox() : null;
   const opts = [mv && ['mir', '⇋ Sur la règle miroir', mv.pos], D.bed && ['bed', '🛏 Sur le milieu du lit', D.bed.x + D.bed.W / 2], bb && ['mid', '▭ Sur le milieu du meuble', (bb.x0 + bb.x1) / 2]].filter(Boolean);
@@ -2562,7 +2568,7 @@ function healDesign() {
 let drawErrShown = false;
 const safe = (f, label) => { try { f(); } catch (e) { console.error(label, e); if (!drawErrShown) { drawErrShown = true; setTimeout(() => toast(`⚠ ${label} : affichage partiel (${e.message})`), 0); } } };
 function draw() {
-  syncGuides();
+  syncGuides(); axLockUpd();
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
   cx.fillStyle = '#faf7f1'; cx.fillRect(0, 0, W, H);
   cx.save(); cx.beginPath(); cx.rect(R, R, W - 2 * R, H - 2 * R); cx.clip();
@@ -2603,6 +2609,9 @@ function draw() {
   cx.setLineDash([]);
   if (marquee) { cx.fillStyle = 'rgba(217,72,15,.08)'; cx.strokeStyle = '#d9480f'; const [a, b] = marquee; cx.fillRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); cx.strokeRect(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])); }
   drawTitle();
+  if (drag && drag.ax && drag.moved !== false && (drag.type === 'move' || drag.type === 'bmove' || drag.type === 'omove')) { // rail de l'axe imposé
+    const [px, py] = drag.start; cx.save(); cx.strokeStyle = 'rgba(217,72,15,.55)'; cx.lineWidth = 1.5; cx.setLineDash([7, 5]); cx.beginPath();
+    if (drag.ax === 'x') { cx.moveTo(R, py); cx.lineTo(W - R, py); } else { cx.moveTo(px, R); cx.lineTo(px, H - R); } cx.stroke(); cx.restore(); }
   if (liveLabel) drawLiveLabel();
   cx.restore();
   drawRulers();
@@ -2914,6 +2923,12 @@ function drawLocks() {
   for (const b of D.boards) if (b.lk && !done.has(b.id)) { const r = rect(b); const [x, y] = toS(r.x1, r.y1); lockIcon(x, y); }
   for (const k of D.books) if (k.lk && !done.has(k.id)) { const [x, y] = toS(k.x + k.w, k.y + k.h); lockIcon(x, y); }
 }
+let moveAx = (() => { try { return localStorage.getItem('atelier.moveAx') || ''; } catch { return ''; } })();
+function setMoveAx(a) { moveAx = a; try { localStorage.setItem('atelier.moveAx', a); } catch { } axLockUpd(); toast(a === 'x' ? '↔ Déplacement gauche-droite seulement' : a === 'y' ? '↕ Déplacement haut-bas seulement' : '✥ Déplacement libre'); }
+function axLockUpd() { const el = $('#axLock'); if (!el) return; const on = tool === 'sel' || tool === 'book'; el.style.display = on ? 'flex' : 'none'; el.querySelectorAll('[data-ax]').forEach(b => b.classList.toggle('on', b.dataset.ax === moveAx)); }
+// axe imposé pendant un déplacement : le bouton ↔ / ↕, ou Maj enfoncée (ordinateur) = l'axe où on bouge le plus
+function moveAxis(e, dx, dy) { if (moveAx) return moveAx; if (e && e.shiftKey) return Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'; return ''; }
+const axTag = a => a === 'x' ? '  · ↔ seulement' : a === 'y' ? '  · ↕ seulement' : '';
 function startMove(base, wx, wy, tapped, wasSel) {
   const list = [...sel].map(byId).filter(Boolean), orig = new Map(list.map(b => [b.id, { x: b.x, y: b.y }]));
   const cs = sel.size > 1 && caissonOf(sel), isBlk = list.length > 1 && list[0].blk && list.every(b => b.blk) && blockOf(list[0]).every(b => sel.has(b.id)), borig = cs ? booksIn(cs.bb).map(k => [k, { x: k.x, y: k.y }]) : isBlk ? selExtras(list).books.map(k => [k, { x: k.x, y: k.y }]) : [];
@@ -3138,15 +3153,17 @@ cv.addEventListener('pointermove', e => {
   else if ((drag.type === 'move' || drag.type === 'bmove' || drag.type === 'dim') && drag.locked) { Vw.ox = drag.ox + sx - drag.start[0]; Vw.oy = drag.oy + sy - drag.start[1]; }
   else if (drag.type === 'move') {
     let dx = wx - drag.w0[0], dy = wy - drag.w0[1];
+    const ax = moveAxis(e, dx, dy); if (ax === 'x') dy = 0; else if (ax === 'y') dx = 0; drag.ax = ax;
     const ids = new Set(drag.orig.keys()), cxs = [], cys = [];
     const ccx = [], ccy = [];
     for (const [id, o] of drag.orig) { const b = byId(id); cxs.push(o.x + dx, o.x + dx + bw(b)); cys.push(o.y + dy, o.y + dy + bh(b)); ccx.push(o.x + dx + bw(b) / 2); ccy.push(o.y + dy + bh(b) / 2); } // le milieu de chaque planche (épaisseur et longueur)
     const mx = (Math.min(...cxs) + Math.max(...cxs)) / 2, my = (Math.min(...cys) + Math.max(...cys)) / 2; if (drag.orig.size > 1) { ccx.push(mx); ccy.push(my); } // et le milieu de l'ensemble déplacé
-    dx += snapDelta2(cxs, ccx, 'x', ids, mx); dy += snapDelta2(cys, ccy, 'y', ids, my);
+    if (ax !== 'y') dx += snapDelta2(cxs, ccx, 'x', ids, mx); else { snapLines.x = null; snapKind.x = null; }
+    if (ax !== 'x') dy += snapDelta2(cys, ccy, 'y', ids, my); else { snapLines.y = null; snapKind.y = null; }
     dx = snapLines.x != null ? dx : Math.round(dx); dy = snapLines.y != null ? dy : Math.round(dy);
     for (const [id, o] of drag.orig) { const b = byId(id); b.x = Math.round((o.x + dx) * 10) / 10; b.y = Math.round((o.y + dy) * 10) / 10; }
     for (const [k, o] of drag.borig || []) { k.x = Math.round((o.x + dx) * 10) / 10; k.y = Math.round((o.y + dy) * 10) / 10; }
-    const f = byId([...ids][0]); liveLabel = [sx, sy, 'x ' + fmt(f.x) + '  ·  y ' + fmt(f.y) + (snapKind.x === 'centre' && snapKind.y === 'centre' ? '  · centré ✛' : snapKind.x === 'centre' || snapKind.y === 'centre' ? '  · centre' : snapKind.x === 'axe' || snapKind.y === 'axe' ? '  · axe' : snapLines.x != null || snapLines.y != null ? '  · bord' : '')];
+    const f = byId([...ids][0]); liveLabel = [sx, sy, 'x ' + fmt(f.x) + '  ·  y ' + fmt(f.y) + (snapKind.x === 'centre' && snapKind.y === 'centre' ? '  · centré ✛' : snapKind.x === 'centre' || snapKind.y === 'centre' ? '  · centre' : snapKind.x === 'axe' || snapKind.y === 'axe' ? '  · axe' : snapLines.x != null || snapLines.y != null ? '  · bord' : '') + axTag(ax)];
   }
   else if (drag.type === 'stretch') {
     const b = drag.b, o = drag.orig, ex = new Set([b.id]);
@@ -3162,11 +3179,13 @@ cv.addEventListener('pointermove', e => {
   }
   else if (drag.type === 'bmove') {
     const k = selBook; let dx = wx - drag.w0[0], dy = wy - drag.w0[1];
-    dx += snapDelta([drag.orig.x + dx, drag.orig.x + dx + k.w], targetsX(), 'x'); dy += snapDelta([drag.orig.y + dy], targetsY(), 'y');
+    const ax = moveAxis(e, dx, dy); if (ax === 'x') dy = 0; else if (ax === 'y') dx = 0; drag.ax = ax;
+    if (ax !== 'y') dx += snapDelta([drag.orig.x + dx, drag.orig.x + dx + k.w], targetsX(), 'x'); else snapLines.x = null;
+    if (ax !== 'x') dy += snapDelta([drag.orig.y + dy], targetsY(), 'y'); else snapLines.y = null;
     k.x = Math.round(drag.orig.x + dx); k.y = Math.round(drag.orig.y + dy);
-    liveLabel = [sx, sy, bookCount(k) + ' livres'];
+    liveLabel = [sx, sy, bookCount(k) + ' livres' + axTag(ax)];
   }
-  else if (drag.type === 'omove') { const o = drag.o; settleObj(o, drag.orig.x + wx - drag.w0[0], drag.orig.y + wy - drag.w0[1]); snapLines.x = o.centered ? o.x : null; snapKind.x = o.centered ? 'centre' : null; liveLabel = [sx, sy, OBJS[o.t].n + (o.centered ? ' · centré' : '')]; }
+  else if (drag.type === 'omove') { const o = drag.o; let dx = wx - drag.w0[0], dy = wy - drag.w0[1]; const ax = moveAxis(e, dx, dy); if (ax === 'x') dy = 0; else if (ax === 'y') dx = 0; drag.ax = ax; settleObj(o, drag.orig.x + dx, drag.orig.y + dy); snapLines.x = o.centered ? o.x : null; snapKind.x = o.centered ? 'centre' : null; liveLabel = [sx, sy, OBJS[o.t].n + (o.centered ? ' · centré' : '') + axTag(ax)]; }
   else if (drag.type === 'osize') { const o = drag.o; o.h = Math.max(40, Math.round(drag.h0 + (wy - drag.y0))); liveLabel = [sx, sy, `${fmt(o.h)} × ${fmt(objW(o))} cm`]; }
   else if (drag.type === 'bstretch') {
     const k = drag.k, o = drag.orig, v = snap1(wx, targetsX(), 'x'); snapLines.y = null;
@@ -4418,6 +4437,7 @@ document.querySelectorAll('[data-v3]').forEach(b => b.onclick = () => T3 && setV
 $('#v3Screw').onclick = () => { V3.showScrews = !V3.showScrews; $('#v3Screw').classList.toggle('on', V3.showScrews); if (!V3.showScrews) V3.sel = null; if (T3) { if (parts('murale').length) build3(); else buildScrews3(); } panel3(); };
 
 // ---------- Boutons ----------
+document.querySelectorAll('#axLock [data-ax]').forEach(b => b.onclick = () => setMoveAx(b.dataset.ax));
 $('#bUndo').onclick = undo; $('#bRedo').onclick = redo; $('#bFit').onclick = fitView;
 $('#bVer').onclick = versionsDialog; $('#bBuild').onclick = openBuild; $('#bDebit').onclick = debitDialog; $('#bSet').onclick = settingsDialog; $('#bMenu').onclick = menuDialog;
 const eyeL = () => isTdl() ? [...EYE, ['showBed', '🛏', 'Le lit'], ['showPip', '🧊', 'Aperçu 3D en direct']] : EYE;
